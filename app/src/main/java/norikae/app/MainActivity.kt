@@ -144,8 +144,10 @@ class MainActivity : ComponentActivity() {
                     onClick = {
                         if (TripController.startFromBoardingNow(ctx)) {
                             toast("乗車時刻からアラームを設定しました")
-                        } else {
+                        } else if (sanyoMissing) {
                             toast("経路を決められません。下の「荒井→新開地の所要分」を設定してください")
+                        } else {
+                            toast("この時刻の電車では北鈴蘭台まで帰れません（終電後）")
                         }
                         refresh()
                     },
@@ -159,8 +161,11 @@ class MainActivity : ComponentActivity() {
                         if (sanyoMissing) "新開地発 北鈴蘭台行きの候補（山陽の時刻表は未入力）" else "帰り道の候補（普通優先）",
                         fontWeight = FontWeight.Bold,
                     )
+                    planner.lastDepartureRoute(dayType)?.let {
+                        Text("荒井発の最終：${it.sanyo!!.dep}発（北鈴蘭台 ${it.kitaArr}着）", fontSize = 13.sp)
+                    }
                     planner.lastRoute(dayType)?.let {
-                        Text("北鈴蘭台に帰れる最終：新開地 ${it.shintetsu.dep}発 ${it.shintetsu.dest}行き（北鈴蘭台 ${it.kitaArr}着）", fontSize = 13.sp)
+                        Text("神戸電鉄の最終：新開地 ${it.shintetsu.dep}発 ${it.shintetsu.dest}行き（北鈴蘭台 ${it.kitaArr}着）", fontSize = 13.sp)
                     }
                 }
             }
@@ -193,12 +198,13 @@ class MainActivity : ComponentActivity() {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (recommended) AssistChip(onClick = {}, label = { Text("おすすめ") })
-                    route.sanyo?.let { AssistChip(onClick = {}, label = { Text(it.type.label) }) }
+                    route.sanyo?.let { AssistChip(onClick = {}, label = { Text(if (it.isLocalOnly) "普通のみ" else it.arrivingType.label) }) }
                     if (route.umedaRisk) AssistChip(onClick = {}, label = { Text("梅田注意") })
                     if (route.shintetsu.transferAtSuzurandai) AssistChip(onClick = {}, label = { Text("鈴蘭台で乗換") })
                 }
                 route.sanyo?.let { s ->
-                    Text("荒井 ${s.dep}発 ${s.type.label} ${s.dest}行き" + (s.transferAt?.let { "（${it}で乗換）" } ?: ""))
+                    Text("荒井 ${s.dep}発 ${s.type.label} ${s.dest}行き")
+                    s.transferNote?.let { Text("↳ $it", fontSize = 13.sp) }
                 }
                 route.shinkaichiArr?.let {
                     Text("新開地 ${it}着" + if (route.shinkaichiEstimated) "（推定）" else "")

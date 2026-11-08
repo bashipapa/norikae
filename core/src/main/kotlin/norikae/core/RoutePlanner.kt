@@ -15,7 +15,7 @@ data class Route(
     val umedaRisk: Boolean get() = sanyo?.goesToUmeda ?: false
 
     /** 普通だけで帰れる経路か（山陽が未入力のときは普通扱い） */
-    val sanyoIsLocal: Boolean get() = sanyo?.type?.isLocal ?: true
+    val sanyoIsLocal: Boolean get() = sanyo?.isLocalOnly ?: true
 
     val waitAtShinkaichi: Int? get() = shinkaichiArr?.let { shintetsu.dep - it }
 }
@@ -112,6 +112,10 @@ class RoutePlanner(private val timetable: Timetable) {
     fun returnTrain(dayType: DayType, after: ServiceTime): UpTrain? =
         timetable.forDay(dayType).kitaSuzurandaiUp.firstOrNull { it.dep >= after }
 
-    /** その日の終電で帰れる最後の経路 */
+    /** その日の終電で帰れる最後の経路（北鈴蘭台着が一番遅いもの） */
     fun lastRoute(dayType: DayType): Route? = plan(dayType, ServiceTime(0)).maxByOrNull { it.kitaArr }
+
+    /** 荒井を一番遅く出て帰れる経路（山陽が未入力なら null） */
+    fun lastDepartureRoute(dayType: DayType): Route? =
+        plan(dayType, ServiceTime(0)).filter { it.sanyo != null }.maxByOrNull { it.sanyo!!.dep }
 }

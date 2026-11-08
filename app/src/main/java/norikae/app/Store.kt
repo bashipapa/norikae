@@ -93,10 +93,15 @@ object Store {
 
     /** assets/timetable.json を読み、設定の所要分で上書きしたもの */
     fun timetable(ctx: Context): Timetable {
-        val base = cachedTimetable ?: ctx.assets.open("timetable.json").bufferedReader().use {
-            Timetable.parse(it.readText())
+        val base = cachedTimetable ?: run {
+            val text = ctx.assets.open("timetable.json").bufferedReader().use { it.readText() }
+            // 山陽の時刻表（data/local/sanyo.json）。個人用のため git には入れていない。無ければ null
+            val sanyo = runCatching {
+                ctx.assets.open("local/sanyo.json").bufferedReader().use { it.readText() }
+            }.getOrNull()
+            Timetable.parse(text, sanyo)
         }.also { cachedTimetable = it }
-        val run = sanyoRunMinutes(ctx) ?: return base
-        return base.copy(sanyoDefaultRunMinutes = run)
+        val runMinutes = sanyoRunMinutes(ctx) ?: return base
+        return base.copy(sanyoDefaultRunMinutes = runMinutes)
     }
 }

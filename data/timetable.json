@@ -8,7 +8,7 @@
       "https://www.shintetsu.co.jp/cms/wp-content/uploads/station-docs/20250315/kita_suzurandai-timetable.pdf"
     ],
     "shintetsuNote": "北鈴蘭台の着時刻は、北鈴蘭台駅時刻表（有馬・三田方面）の発車時刻を着時刻とみなしている",
-    "sanyoNote": "山陽（荒井発）は未入力。公式時刻表（駅探）の利用条件を確認してから入力する"
+    "sanyoNote": "山陽（荒井発）はこのファイルには入れない。個人用のローカルファイル data/local/sanyo.json（git管理外）から読み込む"
   },
 
   "transferMinutesAtShinkaichi": 3,

@@ -23,4 +23,6 @@ tasks.test {
     useJUnitPlatform()
     // テストから data/timetable.json を読む
     systemProperty("timetable.path", rootProject.file("data/timetable.json").absolutePath)
+    // 個人用のローカル時刻表（git管理外）。あれば中身の整合性もテストする
+    systemProperty("sanyo.local.path", rootProject.file("data/local/sanyo.json").absolutePath)
 }

@@ -11,6 +11,7 @@ enum class TrainType(val label: String, val isLocal: Boolean) {
     EXPRESS("急行", false),
     SPECIAL_RAPID("特快速", false),
     S_LIMITED("S特急", false),
+    LIMITED("特急", false),
     DIRECT_LIMITED("直通特急", false),
     OTHER("その他", false);
 
@@ -29,9 +30,24 @@ data class SanyoTrain(
     val shinkaichiArr: ServiceTime?,
     /** 途中で乗り換える駅（例: 山陽明石）。直通なら null */
     val transferAt: String?,
+    /** 乗り換え先の列車の種別・行先（乗り換えがあるとき） */
+    val transferTrainType: TrainType? = null,
+    val transferTrainDest: String? = null,
+    /** 乗り換えの説明（例: 東二見 22:48着 → 22:53発 直通特急 大阪梅田行きに乗り換え） */
+    val transferNote: String? = null,
 ) {
-    /** 乗り過ごすと梅田（阪神）まで行ってしまう列車か */
-    val goesToUmeda: Boolean get() = type == TrainType.DIRECT_LIMITED || dest.contains("梅田")
+    /** 新開地に着く列車（乗り換えがあれば乗り換え後の列車）の種別 */
+    val arrivingType: TrainType get() = transferTrainType ?: type
+
+    /** 新開地に着く列車の行先 */
+    val arrivingDest: String get() = transferTrainDest ?: dest
+
+    /** 乗り過ごすと梅田（阪神）まで行ってしまうか */
+    val goesToUmeda: Boolean
+        get() = arrivingType == TrainType.DIRECT_LIMITED || arrivingDest.contains("梅田")
+
+    /** 普通だけで新開地まで行けるか */
+    val isLocalOnly: Boolean get() = type.isLocal && (transferTrainType?.isLocal ?: true)
 }
 
 /** 神戸電鉄（新開地発）の1本 */
@@ -73,6 +89,21 @@ data class Timetable(
         private val json = Json { ignoreUnknownKeys = true }
 
         fun parse(text: String): Timetable = json.decodeFromString<TimetableJson>(text).toModel()
+
+        /**
+         * 基本の時刻表に、ローカルファイル（data/local/sanyo.json）の山陽の時刻表を重ねる。
+         * ローカルファイルは個人利用の時刻データのため git には入れていない。
+         */
+        fun parse(text: String, sanyoOverlay: String?): Timetable {
+            val base = parse(text)
+            if (sanyoOverlay.isNullOrBlank()) return base
+            val overlay = json.decodeFromString<SanyoOverlayJson>(sanyoOverlay).sanyo
+            fun day(list: List<SanyoJson>) = list.map { it.toModel() }.sortedBy { it.dep }
+            return base.copy(
+                weekday = base.weekday.copy(sanyo = day(overlay.weekday)),
+                holiday = base.holiday.copy(sanyo = day(overlay.holiday)),
+            )
+        }
     }
 }
 
@@ -105,6 +136,9 @@ private data class TimetableJson(
 }
 
 @Serializable
+private data class SanyoOverlayJson(val sanyo: ByDay<SanyoJson> = ByDay())
+
+@Serializable
 private data class MetaJson(val shintetsuRevision: String? = null)
 
 @Serializable
@@ -117,6 +151,9 @@ private data class SanyoJson(
     val dest: String,
     val shinkaichi: String? = null,
     val transferAt: String? = null,
+    val transferTrainType: String? = null,
+    val transferTrainDest: String? = null,
+    val transferNote: String? = null,
 ) {
     fun toModel() = SanyoTrain(
         dep = ServiceTime.parse(dep),
@@ -124,6 +161,9 @@ private data class SanyoJson(
         dest = dest,
         shinkaichiArr = shinkaichi?.let(ServiceTime::parse),
         transferAt = transferAt,
+        transferTrainType = transferTrainType?.let(TrainType::fromLabel),
+        transferTrainDest = transferTrainDest,
+        transferNote = transferNote,
     )
 }
 
