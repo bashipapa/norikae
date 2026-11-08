@@ -1,0 +1,88 @@
+{
+  "meta": {
+    "description": "荒井→新開地→北鈴蘭台 の帰宅用時刻表（21時以降〜終電）",
+    "timeFormat": "HH:MM。0時以降は 24:03 のように24を足して書く",
+    "shintetsuRevision": "2025-03-15",
+    "shintetsuSources": [
+      "https://www.shintetsu.co.jp/cms/wp-content/uploads/station-docs/20250315/shinkaichi-timetable.pdf",
+      "https://www.shintetsu.co.jp/cms/wp-content/uploads/station-docs/20250315/kita_suzurandai-timetable.pdf"
+    ],
+    "shintetsuNote": "北鈴蘭台の着時刻は、北鈴蘭台駅時刻表（有馬・三田方面）の発車時刻を着時刻とみなしている",
+    "sanyoNote": "山陽（荒井発）は未入力。公式時刻表（駅探）の利用条件を確認してから入力する"
+  },
+
+  "transferMinutesAtShinkaichi": 3,
+  "sanyoDefaultRunMinutes": null,
+
+  "sanyo": {
+    "weekday": [],
+    "holiday": []
+  },
+
+  "shintetsu": {
+    "weekday": [
+      { "dep": "21:11", "type": "普通", "dest": "三田",     "kitaSuzurandai": "21:29" },
+      { "dep": "21:17", "type": "準急", "dest": "志染",     "kitaSuzurandai": null, "note": "粟生線。北鈴蘭台に行かない" },
+      { "dep": "21:26", "type": "普通", "dest": "三田",     "kitaSuzurandai": "21:44" },
+      { "dep": "21:32", "type": "準急", "dest": "小野",     "kitaSuzurandai": null, "note": "粟生線。北鈴蘭台に行かない" },
+      { "dep": "21:42", "type": "準急", "dest": "三田",     "kitaSuzurandai": "21:59" },
+      { "dep": "21:46", "type": "普通", "dest": "西鈴蘭台", "kitaSuzurandai": null, "note": "粟生線。北鈴蘭台に行かない" },
+      { "dep": "21:56", "type": "普通", "dest": "三田",     "kitaSuzurandai": "22:14" },
+      { "dep": "22:03", "type": "準急", "dest": "粟生",     "kitaSuzurandai": null, "note": "粟生線。北鈴蘭台に行かない" },
+      { "dep": "22:12", "type": "普通", "dest": "三田",     "kitaSuzurandai": "22:30" },
+      { "dep": "22:27", "type": "普通", "dest": "三田",     "kitaSuzurandai": "22:45" },
+      { "dep": "22:32", "type": "準急", "dest": "小野",     "kitaSuzurandai": null, "note": "粟生線。北鈴蘭台に行かない" },
+      { "dep": "22:42", "type": "普通", "dest": "三田",     "kitaSuzurandai": "23:00" },
+      { "dep": "22:57", "type": "普通", "dest": "三田",     "kitaSuzurandai": "23:15" },
+      { "dep": "23:03", "type": "準急", "dest": "三木",     "kitaSuzurandai": null, "note": "粟生線。北鈴蘭台に行かない" },
+      { "dep": "23:17", "type": "普通", "dest": "三田",     "kitaSuzurandai": "23:35" },
+      { "dep": "23:30", "type": "普通", "dest": "三田",     "kitaSuzurandai": "23:50" },
+      { "dep": "23:34", "type": "準急", "dest": "三木",     "kitaSuzurandai": "23:50", "transferAtSuzurandai": true, "note": "鈴蘭台で三田行きに乗り換え" },
+      { "dep": "23:50", "type": "普通", "dest": "道場南口", "kitaSuzurandai": "24:08" },
+      { "dep": "24:03", "type": "普通", "dest": "鈴蘭台",   "kitaSuzurandai": null, "note": "鈴蘭台止まり。北鈴蘭台に行かない" }
+    ],
+    "holiday": [
+      { "dep": "21:11", "type": "普通", "dest": "三田",     "kitaSuzurandai": "21:29" },
+      { "dep": "21:17", "type": "準急", "dest": "志染",     "kitaSuzurandai": null, "note": "粟生線。北鈴蘭台に行かない" },
+      { "dep": "21:26", "type": "普通", "dest": "三田",     "kitaSuzurandai": "21:44" },
+      { "dep": "21:32", "type": "準急", "dest": "小野",     "kitaSuzurandai": null, "note": "粟生線。北鈴蘭台に行かない" },
+      { "dep": "21:42", "type": "準急", "dest": "三田",     "kitaSuzurandai": "21:59" },
+      { "dep": "21:46", "type": "普通", "dest": "西鈴蘭台", "kitaSuzurandai": null, "note": "粟生線。北鈴蘭台に行かない" },
+      { "dep": "21:56", "type": "普通", "dest": "三田",     "kitaSuzurandai": "22:14" },
+      { "dep": "22:03", "type": "準急", "dest": "粟生",     "kitaSuzurandai": null, "note": "粟生線。北鈴蘭台に行かない" },
+      { "dep": "22:12", "type": "普通", "dest": "三田",     "kitaSuzurandai": "22:30" },
+      { "dep": "22:28", "type": "準急", "dest": "三田",     "kitaSuzurandai": "22:45" },
+      { "dep": "22:31", "type": "普通", "dest": "小野",     "kitaSuzurandai": null, "note": "粟生線。北鈴蘭台に行かない" },
+      { "dep": "22:42", "type": "普通", "dest": "三田",     "kitaSuzurandai": "23:00" },
+      { "dep": "22:57", "type": "普通", "dest": "三田",     "kitaSuzurandai": "23:15" },
+      { "dep": "23:03", "type": "準急", "dest": "三木",     "kitaSuzurandai": null, "note": "粟生線。北鈴蘭台に行かない" },
+      { "dep": "23:17", "type": "普通", "dest": "三田",     "kitaSuzurandai": "23:35" },
+      { "dep": "23:30", "type": "普通", "dest": "三田",     "kitaSuzurandai": "23:50" },
+      { "dep": "23:34", "type": "準急", "dest": "三木",     "kitaSuzurandai": "23:50", "transferAtSuzurandai": true, "note": "鈴蘭台で三田行きに乗り換え" },
+      { "dep": "23:50", "type": "普通", "dest": "道場南口", "kitaSuzurandai": "24:08" },
+      { "dep": "24:03", "type": "普通", "dest": "鈴蘭台",   "kitaSuzurandai": null, "note": "鈴蘭台止まり。北鈴蘭台に行かない" }
+    ]
+  },
+
+  "kitaSuzurandaiUp": {
+    "description": "北鈴蘭台発 新開地方面。乗り過ごして山の街側から戻るときの目安",
+    "weekday": [
+      { "dep": "21:04", "dest": "新開地" }, { "dep": "21:19", "dest": "新開地" },
+      { "dep": "21:34", "dest": "新開地" }, { "dep": "21:49", "dest": "新開地" },
+      { "dep": "22:04", "dest": "新開地" }, { "dep": "22:19", "dest": "鈴蘭台" },
+      { "dep": "22:34", "dest": "新開地" }, { "dep": "22:49", "dest": "新開地" },
+      { "dep": "23:04", "dest": "新開地" }, { "dep": "23:20", "dest": "新開地" },
+      { "dep": "23:36", "dest": "新開地" }, { "dep": "23:54", "dest": "鈴蘭台" },
+      { "dep": "24:09", "dest": "鈴蘭台" }, { "dep": "24:27", "dest": "鈴蘭台" }
+    ],
+    "holiday": [
+      { "dep": "21:04", "dest": "新開地" }, { "dep": "21:19", "dest": "新開地" },
+      { "dep": "21:34", "dest": "新開地" }, { "dep": "21:49", "dest": "新開地" },
+      { "dep": "22:04", "dest": "新開地" }, { "dep": "22:19", "dest": "鈴蘭台" },
+      { "dep": "22:34", "dest": "新開地" }, { "dep": "22:49", "dest": "新開地" },
+      { "dep": "23:04", "dest": "新開地" }, { "dep": "23:20", "dest": "新開地" },
+      { "dep": "23:36", "dest": "新開地" }, { "dep": "23:54", "dest": "鈴蘭台" },
+      { "dep": "24:09", "dest": "鈴蘭台" }, { "dep": "24:27", "dest": "鈴蘭台" }
+    ]
+  }
+}
