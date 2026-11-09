@@ -79,3 +79,10 @@ class TimetableTest {
     }
 
 }
+
+class RetrievedAtTest {
+    @Test
+    fun retrievedAtIsParsed() {
+        assertEquals("2026-11-09", loadRealTimetable().retrievedAt)
+    }
+}

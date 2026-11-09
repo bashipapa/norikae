@@ -100,6 +100,8 @@ data class Timetable(
     val stations: Map<StationId, LatLon> = emptyMap(),
     /** 山陽明石発 */
     val sanyoAkashi: List<SanyoTrain> = emptyList(),
+    /** 時刻表を取得した日（"2026-11-09"）。新しい時刻表かどうかの比較に使う */
+    val retrievedAt: String? = null,
 ) {
     fun sanyoFrom(origin: Origin): List<SanyoTrain> = when (origin) {
         Origin.ARAI -> sanyo
@@ -134,6 +136,7 @@ private data class TimetableJson(
         shintetsu = shintetsu.weekday.map { it.toModel() }.sortedBy { it.dep },
         kitaSuzurandaiUp = kitaSuzurandaiUp.weekday.map { UpTrain(ServiceTime.parse(it.dep), it.dest) }.sortedBy { it.dep },
         shintetsuRevision = meta?.shintetsuRevision,
+        retrievedAt = listOfNotNull(meta?.sanyoRetrievedAt, meta?.shintetsuRetrievedAt).maxOrNull(),
         stations = stations.mapNotNull { (key, v) ->
             StationId.entries.firstOrNull { it.name == key }?.let { it to LatLon(v.lat, v.lon) }
         }.toMap(),
@@ -144,7 +147,11 @@ private data class TimetableJson(
 private data class StationJson(val name: String? = null, val lat: Double, val lon: Double)
 
 @Serializable
-private data class MetaJson(val shintetsuRevision: String? = null)
+private data class MetaJson(
+    val shintetsuRevision: String? = null,
+    val sanyoRetrievedAt: String? = null,
+    val shintetsuRetrievedAt: String? = null,
+)
 
 /** JSON では "weekday" の下に並べる（平日専用） */
 @Serializable

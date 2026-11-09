@@ -45,6 +45,7 @@ object TripController {
         val transition = engine(ctx).start(route, date.toString())
         apply(ctx, transition)
         TripService.start(ctx, fromForeground)
+        FitbitHelper.notify(ctx, route)
     }
 
     /** 「今乗った」：実際の乗車時刻から経路を決めて開始 */

@@ -96,6 +96,7 @@ class MainActivity : ComponentActivity() {
         Ringer.ensureChannel(this)
         Notifier.ensureChannel(this)
         Sensing.registerAll(this)
+        TimetableUpdater.schedule(this)
         enableEdgeToEdge()
         setContent {
             MaterialTheme {
@@ -205,6 +206,15 @@ class MainActivity : ComponentActivity() {
                                     (if (trip.taxi) "鈴蘭台" else "北鈴蘭台") + " ${ServiceTime(trip.kitaArr)}着" +
                                     if (trip.taxi) "（鈴蘭台からタクシー）" else "",
                             )
+                            if (Store.fitbitHelperEnabled(ctx)) {
+                                Text(
+                                    "Fitbit Air：${FitbitHelper.describe(FitbitHelper.times(trip))}",
+                                    fontSize = 13.sp,
+                                )
+                                TextButton(onClick = { startActivity(FitbitHelper.openGoogleHealth(ctx)) }) {
+                                    Text("Google Health を開いて Fitbit Air にアラームを入れる")
+                                }
+                            }
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Button(onClick = {
                                     TripController.handle(ctx, TripEvent.UserFinished(TripController.now().second)); refresh()
@@ -329,6 +339,45 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 item { PermissionCard(showOptional = true) }
+                // 時刻表の自動更新
+                item {
+                    Card {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("時刻表", fontWeight = FontWeight.Bold)
+                            Text(
+                                "取得日：${Store.timetable(ctx).retrievedAt ?: "不明"}" +
+                                    "｜最後に確認：${Store.checkedAt(ctx) ?: "まだ"}",
+                                fontSize = 13.sp,
+                            )
+                            Text("週1回、自動で最新の時刻表（GitHub で毎週 Yahoo!路線情報から更新）をダウンロードします", fontSize = 12.sp)
+                            TextButton(onClick = {
+                                TimetableUpdater.updateNow(ctx)
+                                toast("時刻表を確認しています。変わっていれば通知でお知らせします")
+                            }) { Text("今すぐ確認する") }
+                        }
+                    }
+                }
+                // Fitbit Air の補助
+                item {
+                    Card {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("Fitbit Air", fontWeight = FontWeight.Bold)
+                            Text(
+                                "Fitbit Air はスマホの通知を受け取れないため、アラームを設定したときに" +
+                                    "「Google Health で入れる時刻」を通知でお知らせします（入れるのは手動）",
+                                fontSize = 12.sp,
+                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                FilterChip(
+                                    selected = Store.fitbitHelperEnabled(ctx),
+                                    onClick = { Store.setFitbitHelperEnabled(ctx, !Store.fitbitHelperEnabled(ctx)); refresh() },
+                                    label = { Text(if (Store.fitbitHelperEnabled(ctx)) "お知らせする" else "お知らせしない") },
+                                )
+                                TextButton(onClick = { startActivity(FitbitHelper.openGoogleHealth(ctx)) }) { Text("Google Health を開く") }
+                            }
+                        }
+                    }
+                }
                 item { AlarmTestCard() }
                 item { SettingsCard(onChanged = refresh) }
                 item { Spacer(Modifier.padding(bottom = 24.dp)) }

@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- 時刻表の自動更新（GitHub から週1回ダウンロード） -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <!-- 位置情報（駅の範囲判定・乗り過ごし判定） -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
@@ -20,6 +22,11 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- Fitbit Air の補助：Google Health（旧 Fitbit アプリ）を開くため -->
+    <queries>
+        <package android:name="com.fitbit.FitbitMobile" />
+    </queries>
 
     <application
         android:allowBackup="false"

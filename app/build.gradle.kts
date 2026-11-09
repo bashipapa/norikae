@@ -55,6 +55,9 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.core:core-ktx:1.16.0")
 
+    // 時刻表の週1回の自動更新
+    implementation("androidx.work:work-runtime-ktx:2.10.1")
+
     // 位置情報・駅の範囲判定（ジオフェンス）・乗り物/歩行の判定
     implementation("com.google.android.gms:play-services-location:21.3.0")
 }

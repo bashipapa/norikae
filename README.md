@@ -46,6 +46,19 @@
 
 `main` にプッシュするたびに GitHub Actions がビルドし、Releases の `latest` が新しい APK に置き換わる。署名鍵を固定しているので、新しい APK はアンインストールせずに上書きインストールできる。
 
+## 時刻表の自動更新（週1回）
+
+1. **GitHub 側**：毎週月曜 3:17（日本時間）に GitHub Actions（`.github/workflows/update-timetable.yml`）が `tools/update_timetable.py` を動かし、Yahoo!路線情報から平日の時刻表を作り直す
+   - 変わっていれば `data/timetable.json` をコミットし、APK もビルドし直して Releases に置く
+   - 変わっていなくても `data/timetable-checked.json`（確認した日）をコミットする。公開リポジトリは60日間活動が無いと定期実行が止まるため
+   - 取得結果がおかしい（本数が前回の半分未満など）ときは書き換えずに失敗で終わる（GitHub からメールが届く）
+   - 手動で動かすとき：GitHub の Actions →「Update timetable (weekly)」→「Run workflow」
+2. **スマホ側**：アプリが週1回 GitHub の `data/timetable.json` をダウンロードして保存する（WorkManager）。APK を入れ直さなくても新しい時刻表で動く。変わったときは通知が出る。設定（⚙）の「時刻表」で取得日の確認と「今すぐ確認する」ができる
+
+## Fitbit Air の補助（手動）
+
+Fitbit Air はスマホの通知を転送できず、ほかのアプリから振動アラームを入れる公式の方法も無い。そこで、アラームを設定したときに「Google Health アプリで Fitbit Air に入れる時刻」（新開地の予告・北鈴蘭台の予告と同じ時刻）を通知で知らせ、Google Health を開くボタンを付けている。設定（⚙）で止められる。
+
 ## 電車に乗ったかの判定
 
 | 何を判定するか | 使うもの |

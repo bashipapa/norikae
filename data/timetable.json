@@ -11,7 +11,9 @@
     "sanyoSource": "Yahoo!路線情報 荒井駅・山陽明石駅 大阪梅田・新開地方面（各列車の停車駅一覧から作成）",
     "sanyoRetrievedAt": "2026-11-09",
     "sanyoNote": "新開地まで行かない列車は、終点で乗り換える次の電車の新開地着を入れている",
-    "stationsSource": "駅の位置: Yahoo!路線情報の各駅ページ（2026-11-09 取得）"
+    "stationsSource": "駅の位置: Yahoo!路線情報の各駅ページ（2026-11-09 取得）",
+    "shintetsuRetrievedAt": "2026-11-09",
+    "autoUpdate": "tools/update_timetable.py が週1回 Yahoo!路線情報から更新（.github/workflows/update-timetable.yml）"
   },
   "transferMinutesAtShinkaichi": 3,
   "sanyoDefaultRunMinutes": null,
@@ -34,11 +36,11 @@
       {"dep": "22:19", "type": "普通", "dest": "高速神戸", "shinkaichi": "23:37"},
       {"dep": "22:33", "type": "普通", "dest": "東二見", "transferAt": "東二見", "transferArr": "22:48", "transferDep": "22:53", "transferTrainType": "直通特急", "transferTrainDest": "大阪梅田(阪神線)", "shinkaichi": "23:24", "transferNote": "東二見 22:48着 → 22:53発 直通特急 大阪梅田(阪神線)行きに乗り換え"},
       {"dep": "22:47", "type": "普通", "dest": "新開地", "shinkaichi": "24:00"},
-      {"dep": "23:03", "type": "普通", "dest": "山陽明石", "transferAt": "山陽明石", "shinkaichi": null, "transferNote": "山陽明石 23:44着。新開地へ行く電車なし", "transferArr": "23:44"},
-      {"dep": "23:19", "type": "普通", "dest": "東須磨", "transferAt": "東須磨", "shinkaichi": null, "transferNote": "東須磨 24:22着。新開地へ行く電車なし", "transferArr": "24:22"},
-      {"dep": "23:37", "type": "普通", "dest": "東二見", "transferAt": "東二見", "shinkaichi": null, "transferNote": "東二見 23:53着。新開地へ行く電車なし", "transferArr": "23:53"},
-      {"dep": "24:00", "type": "普通", "dest": "東二見", "transferAt": "東二見", "shinkaichi": null, "transferNote": "東二見 24:15着。新開地へ行く電車なし", "transferArr": "24:15"},
-      {"dep": "24:14", "type": "普通", "dest": "東二見", "transferAt": "東二見", "shinkaichi": null, "transferNote": "東二見 24:30着。新開地へ行く電車なし", "transferArr": "24:30"}
+      {"dep": "23:03", "type": "普通", "dest": "山陽明石", "transferAt": "山陽明石", "transferArr": "23:44", "shinkaichi": null, "transferNote": "山陽明石 23:44着。新開地へ行く電車なし"},
+      {"dep": "23:19", "type": "普通", "dest": "東須磨", "transferAt": "東須磨", "transferArr": "24:22", "shinkaichi": null, "transferNote": "東須磨 24:22着。新開地へ行く電車なし"},
+      {"dep": "23:37", "type": "普通", "dest": "東二見", "transferAt": "東二見", "transferArr": "23:53", "shinkaichi": null, "transferNote": "東二見 23:53着。新開地へ行く電車なし"},
+      {"dep": "24:00", "type": "普通", "dest": "東二見", "transferAt": "東二見", "transferArr": "24:15", "shinkaichi": null, "transferNote": "東二見 24:15着。新開地へ行く電車なし"},
+      {"dep": "24:14", "type": "普通", "dest": "東二見", "transferAt": "東二見", "transferArr": "24:30", "shinkaichi": null, "transferNote": "東二見 24:30着。新開地へ行く電車なし"}
     ]
   },
   "sanyoAkashi": {

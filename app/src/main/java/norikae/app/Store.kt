@@ -19,6 +19,8 @@ object Store {
     private const val KEY_DAY_OFF = "day_off"
     private const val KEY_LEFT_ORIGIN = "left_origin_at"
     private const val KEY_LAST_TAB = "last_tab"
+    private const val KEY_CHECKED_AT = "timetable_checked_at"
+    private const val KEY_FITBIT = "fitbit_helper"
     private const val KEY_LOCAL_TOLERANCE = "local_tolerance"
 
     private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -103,14 +105,43 @@ object Store {
     fun lastTab(ctx: Context): Int = prefs(ctx).getInt(KEY_LAST_TAB, 0)
     fun saveLastTab(ctx: Context, index: Int) { prefs(ctx).edit().putInt(KEY_LAST_TAB, index).apply() }
 
+    // ---- 時刻表の自動更新 ----
+
+    /** ダウンロードした時刻表を保存する。戻り値: 中身が変わったか */
+    fun saveDownloadedTimetable(ctx: Context, text: String): Boolean {
+        val file = downloadedFile(ctx)
+        val before = timetable(ctx).let { "${it.retrievedAt}|${it.sanyo}|${it.sanyoAkashi}|${it.shintetsu}" }
+        if (file.exists() && file.readText() == text) return false
+        file.writeText(text)
+        cachedTimetable = null
+        val after = timetable(ctx).let { "${it.retrievedAt}|${it.sanyo}|${it.sanyoAkashi}|${it.shintetsu}" }
+        return before != after
+    }
+
+    /** 最後に時刻表を確認（ダウンロード）した日 */
+    fun checkedAt(ctx: Context): String? = prefs(ctx).getString(KEY_CHECKED_AT, null)
+    fun saveCheckedAt(ctx: Context, date: LocalDate) { prefs(ctx).edit().putString(KEY_CHECKED_AT, date.toString()).apply() }
+
+    // ---- Fitbit Air の補助 ----
+
+    fun fitbitHelperEnabled(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_FITBIT, true)
+    fun setFitbitHelperEnabled(ctx: Context, on: Boolean) { prefs(ctx).edit().putBoolean(KEY_FITBIT, on).apply() }
+
     // ---- 時刻表 ----
 
     @Volatile private var cachedTimetable: Timetable? = null
 
-    /** assets/timetable.json を読み、設定の所要分で上書きしたもの */
+    private fun downloadedFile(ctx: Context) = java.io.File(ctx.filesDir, "timetable.json")
+
+    /**
+     * 使う時刻表：APK に同梱した assets/timetable.json と、週1回ダウンロードした時刻表のうち新しい方。
+     * 設定の所要分で上書きしたものを返す。
+     */
     fun timetable(ctx: Context): Timetable {
-        val base = cachedTimetable ?: ctx.assets.open("timetable.json").bufferedReader().use {
-            Timetable.parse(it.readText())
+        val base = cachedTimetable ?: run {
+            val bundled = ctx.assets.open("timetable.json").bufferedReader().use { Timetable.parse(it.readText()) }
+            val downloaded = runCatching { Timetable.parse(downloadedFile(ctx).readText()) }.getOrNull()
+            if (downloaded != null && (downloaded.retrievedAt ?: "") >= (bundled.retrievedAt ?: "")) downloaded else bundled
         }.also { cachedTimetable = it }
         val runMinutes = sanyoRunMinutes(ctx) ?: return base
         return base.copy(sanyoDefaultRunMinutes = runMinutes)

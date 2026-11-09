@@ -1,0 +1,43 @@
+name: Update timetable (weekly)
+
+on:
+  schedule:
+    # 毎週月曜 3:17（日本時間）= 日曜 18:17（UTC）
+    - cron: "17 18 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch timetable from Yahoo!路線情報
+        run: python3 tools/update_timetable.py
+
+      # 確認した日を記録してコミットする。
+      # 公開リポジトリは60日間コミットが無いと定期実行が止まるため、変更が無い週もコミットして動かし続ける
+      - name: Commit
+        id: commit
+        run: |
+          changed=false
+          git diff --quiet data/timetable.json || changed=true
+          printf '{\n  "checkedAt": "%s",\n  "timetableChanged": %s\n}\n' "$(TZ=Asia/Tokyo date +%F)" "$changed" > data/timetable-checked.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/timetable.json data/timetable-checked.json
+          if [ "$changed" = true ]; then msg="時刻表を自動更新（Yahoo!路線情報）"; else msg="時刻表を確認（変更なし）"; fi
+          git commit -m "$msg" || true
+          git push
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+
+      # GITHUB_TOKEN でのプッシュは他のワークフローを起動しないので、時刻表が変わったときは APK のビルドを明示的に起動する
+      - name: Rebuild APK when timetable changed
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run build.yml --ref main
