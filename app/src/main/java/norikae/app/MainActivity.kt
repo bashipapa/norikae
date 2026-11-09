@@ -289,7 +289,7 @@ class MainActivity : ComponentActivity() {
             Column(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(12.dp)) {
                 val badges = buildList {
                     if (recommended) add("おすすめ" to MaterialTheme.colorScheme.primary)
-                    if (route.umedaRisk) add("乗り過ごすと梅田まで行きます" to RED)
+                    if (route.umedaRisk) add("乗り過ごすと${shortName(s?.arrivingDest ?: "梅田")}まで行きます" to RED)
                     if (route.shintetsu.transferAtSuzurandai) add("鈴蘭台で三田行きに乗換" to MaterialTheme.colorScheme.onSurfaceVariant)
                     if (route.taxiFromSuzurandai) add("終電後：鈴蘭台止まり → タクシー" to AMBER)
                 }
