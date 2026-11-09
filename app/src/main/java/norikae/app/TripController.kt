@@ -36,20 +36,20 @@ object TripController {
 
     /** 経路を選んで開始（画面から） */
     @Synchronized
-    fun start(ctx: Context, route: Route) {
+    fun start(ctx: Context, route: Route, fromForeground: Boolean = true) {
         val (date, _) = now()
         // 前の乗車が残っていれば片付ける
         if (isActive(ctx)) end(ctx)
         val transition = engine(ctx).start(route, date.toString())
         apply(ctx, transition)
-        TripService.start(ctx)
+        TripService.start(ctx, fromForeground)
     }
 
     /** 「今乗った」：実際の乗車時刻から経路を決めて開始 */
-    fun startFromBoardingNow(ctx: Context): Boolean {
+    fun startFromBoardingNow(ctx: Context, fromForeground: Boolean = true): Boolean {
         val (_, time) = now()
         val route = planner(ctx).routeFromBoarding(time) ?: return false
-        start(ctx, route)
+        start(ctx, route, fromForeground)
         return true
     }
 
@@ -71,7 +71,7 @@ object TripController {
         // 受信時点では位置がないので、「荒井の範囲を出た時刻」（GeofenceReceiver が保存）で判定する
         val shouldStart = AutoStartRule().shouldStart(time, motion, nearArai = null, leftAraiAt = Store.leftAraiAt(ctx, date))
         if (!shouldStart) return
-        if (!startFromBoardingNow(ctx)) {
+        if (!startFromBoardingNow(ctx, fromForeground = false)) {
             Notifier.info(ctx, "飲み会モード：乗車を検知しましたが、経路を決められません。アプリで「荒井→新開地の所要分」を設定してください")
         }
     }
@@ -125,6 +125,6 @@ object TripController {
             // AlarmScheduler は過ぎた時刻を予約しない
             alarms.forEach { AlarmScheduler.schedule(ctx, it, serviceDate) }
         }
-        TripService.start(ctx)
+        TripService.start(ctx, fromForeground = false)
     }
 }

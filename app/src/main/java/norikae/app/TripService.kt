@@ -38,12 +38,19 @@ class TripService : Service() {
 
     @SuppressLint("MissingPermission")
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        ServiceCompat.startForeground(
-            this,
-            Notifier.ONGOING_ID,
-            Notifier.ongoing(this, Store.trip(this)),
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION,
-        )
+        val started = runCatching {
+            ServiceCompat.startForeground(
+                this,
+                Notifier.ONGOING_ID,
+                Notifier.ongoing(this, Store.trip(this)),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION,
+            )
+        }
+        if (started.isFailure) {
+            // 位置の権限が「使用中のみ」でバックグラウンドから起動した場合など。アラームは時刻どおり鳴る
+            stopSelf()
+            return START_NOT_STICKY
+        }
         if (Sensing.has(this, Manifest.permission.ACCESS_FINE_LOCATION)) {
             val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 20_000L)
                 .setMinUpdateIntervalMillis(10_000L)
@@ -60,7 +67,17 @@ class TripService : Service() {
     }
 
     companion object {
-        fun start(ctx: Context) {
+        /**
+         * 乗車中の位置取得を始める。
+         * Android 14 以降、アプリが裏にいるときに位置の常駐処理を始めるには「常に許可」が必要
+         * （無いと SecurityException）。その場合は位置なしで続ける（アラーム・乗り物/歩行の判定は動く）。
+         */
+        fun start(ctx: Context, fromForeground: Boolean) {
+            if (!Sensing.has(ctx, Manifest.permission.ACCESS_FINE_LOCATION)) return
+            if (!fromForeground && !Sensing.has(ctx, Manifest.permission.ACCESS_BACKGROUND_LOCATION)) {
+                Notifier.info(ctx, "位置が「使用中のみ許可」のため、位置を使った乗り過ごし判定はお休みします（アラームは時刻どおり鳴ります）")
+                return
+            }
             runCatching { ContextCompat.startForegroundService(ctx, Intent(ctx, TripService::class.java)) }
                 .onFailure { Notifier.info(ctx, "位置の取得を開始できませんでした（アラームは時刻どおり鳴ります）") }
         }

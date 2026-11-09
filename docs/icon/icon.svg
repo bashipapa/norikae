@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="432" height="432">
+  <!-- 背景（ネイビー） -->
+  <rect width="108" height="108" fill="#1F3864"/>
+  <!-- 目覚まし時計のベル（アンバー） -->
+  <circle cx="39" cy="36" r="7.5" fill="#F2B33D"/>
+  <circle cx="69" cy="36" r="7.5" fill="#F2B33D"/>
+  <!-- 脚 -->
+  <path d="M41 74 L37 81 M67 74 L71 81" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" fill="none"/>
+  <!-- 電車の正面（白） -->
+  <path d="M43 36 H65 A9 9 0 0 1 74 45 V68 A9 9 0 0 1 65 77 H43 A9 9 0 0 1 34 68 V45 A9 9 0 0 1 43 36 Z" fill="#FFFFFF"/>
+  <!-- 窓（ネイビー） -->
+  <path d="M43 41 H65 A4 4 0 0 1 69 45 V54 A4 4 0 0 1 65 58 H43 A4 4 0 0 1 39 54 V45 A4 4 0 0 1 43 41 Z" fill="#1F3864"/>
+  <!-- Zz（寝ている） -->
+  <path d="M45 46 H52 L45 53 H52" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <path d="M56 44 H61 L56 49 H61" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- ライト（アンバー） -->
+  <circle cx="43.5" cy="68" r="3.5" fill="#F2B33D"/>
+  <circle cx="64.5" cy="68" r="3.5" fill="#F2B33D"/>
+</svg>

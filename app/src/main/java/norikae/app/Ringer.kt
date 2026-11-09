@@ -62,7 +62,7 @@ object Ringer {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val notification = NotificationCompat.Builder(ctx, CHANNEL_ALARM)
-            .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+            .setSmallIcon(R.drawable.ic_stat_norikae)
             .setContentTitle(title)
             .setContentText(message)
             .setStyle(NotificationCompat.BigTextStyle().bigText(message))
@@ -99,7 +99,7 @@ object Notifier {
     fun info(ctx: Context, message: String) {
         ensureChannel(ctx)
         val n = NotificationCompat.Builder(ctx, CHANNEL_INFO)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setSmallIcon(R.drawable.ic_stat_norikae)
             .setContentTitle("のりかえアラーム")
             .setContentText(message)
             .setStyle(NotificationCompat.BigTextStyle().bigText(message))
@@ -116,7 +116,7 @@ object Notifier {
             "${phaseLabel(it)}｜$shinkaichi${ServiceTime(it.shintetsuDep)} ${it.shintetsuDest}行き → 北鈴蘭台 ${ServiceTime(it.kitaArr)}着"
         } ?: "乗車中"
         return NotificationCompat.Builder(ctx, CHANNEL_INFO)
-            .setSmallIcon(android.R.drawable.ic_menu_mylocation)
+            .setSmallIcon(R.drawable.ic_stat_norikae)
             .setContentTitle("飲み会モード（乗車中）")
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))

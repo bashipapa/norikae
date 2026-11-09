@@ -10,18 +10,20 @@ import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingEvent
 import norikae.core.AlarmKind
 import norikae.core.Motion
+import norikae.core.RingKind
 import norikae.core.TripEvent
 
 /** 予約したアラームの時刻になった */
 class AlarmReceiver : BroadcastReceiver() {
     companion object {
         const val ACTION_STOP_RINGING = "norikae.app.STOP_RINGING"
+        const val ACTION_TEST = "norikae.app.TEST_ALARM"
     }
 
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == ACTION_STOP_RINGING) {
-            Ringer.stop(context)
-            return
+        when (intent.action) {
+            ACTION_STOP_RINGING -> { Ringer.stop(context); return }
+            ACTION_TEST -> { Ringer.ring(context, RingKind.WAKE, "アラームのテストです。「起きた（止める）」で止まります"); return }
         }
         val kind = intent.getStringExtra(AlarmScheduler.EXTRA_KIND)?.let { AlarmKind.valueOf(it) } ?: return
         val (_, time) = TripController.now()

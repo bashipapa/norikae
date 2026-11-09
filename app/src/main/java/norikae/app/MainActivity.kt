@@ -53,6 +53,7 @@ import com.google.android.gms.location.Priority
 import kotlinx.coroutines.delay
 import norikae.core.DrinkingModeRule
 import norikae.core.LatLon
+import norikae.core.RingKind
 import norikae.core.Route
 import norikae.core.ServiceTime
 import norikae.core.StationId
@@ -60,6 +61,14 @@ import norikae.core.TripEvent
 import norikae.core.isWeekday
 
 class MainActivity : ComponentActivity() {
+
+    /** 設定画面から戻ったときに権限の表示を更新するため */
+    private var resumeTick by mutableIntStateOf(0)
+
+    override fun onResume() {
+        super.onResume()
+        resumeTick++
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -192,6 +201,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            item { AlarmTestCard() }
             item { SettingsCard(onChanged = refresh) }
             item { Spacer(Modifier.padding(bottom = 24.dp)) }
         }
@@ -227,6 +237,27 @@ class MainActivity : ComponentActivity() {
                 Text("北鈴蘭台 ${route.kitaArr}着")
                 route.shintetsu.note?.let { Text(it, fontSize = 12.sp) }
                 TextButton(onClick = onStart) { Text("この電車でアラーム設定") }
+            }
+        }
+    }
+
+    @Composable
+    private fun AlarmTestCard() {
+        val ctx = this
+        Card {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("アラームのテスト", fontWeight = FontWeight.Bold)
+                Text("本番と同じ鳴らし方（アラーム音・バイブ・ロック画面に全画面表示）で鳴らします。音量は「アラーム音量」に従います", fontSize = 12.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = {
+                        Ringer.ring(ctx, RingKind.WAKE, "アラームのテストです。「起きた（止める）」で止まります")
+                    }) { Text("今すぐ鳴らす") }
+                    Button(onClick = {
+                        AlarmScheduler.scheduleTest(ctx, 60)
+                        toast("1分後に鳴ります。画面を消して待ってください")
+                    }) { Text("1分後に鳴らす") }
+                }
+                Text("「1分後」は予約から鳴るまで本番と同じ流れです。画面を消して、ロック中に鳴るか確かめてください", fontSize = 12.sp)
             }
         }
     }
@@ -285,25 +316,38 @@ class MainActivity : ComponentActivity() {
             add(Manifest.permission.ACTIVITY_RECOGNITION)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) add(Manifest.permission.POST_NOTIFICATIONS)
         }
-        val missingBasic = remember(tick) { basicPermissions.filterNot { Sensing.has(ctx, it) } }
-        val missingBackground = remember(tick) { !Sensing.has(ctx, Manifest.permission.ACCESS_BACKGROUND_LOCATION) }
+        val missingBasic = remember(tick, resumeTick) { basicPermissions.filterNot { Sensing.has(ctx, it) } }
+        val missingBackground = remember(tick, resumeTick) { !Sensing.has(ctx, Manifest.permission.ACCESS_BACKGROUND_LOCATION) }
         val nm = getSystemService(NotificationManager::class.java)
         val missingFullScreen = Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && !nm.canUseFullScreenIntent()
         val am = getSystemService(AlarmManager::class.java)
         val missingExact = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !am.canScheduleExactAlarms()
 
-        if (missingBasic.isEmpty() && !missingBackground && !missingFullScreen && !missingExact) return
+        val requiredOk = missingBasic.isEmpty() && !missingFullScreen && !missingExact
+        if (requiredOk && !missingBackground) return
+        if (requiredOk) {
+            // 必須はそろっている。「常に許可」は自動開始を使うときだけ必要
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("位置情報は「使用中のみ許可」です", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text(
+                        "画面から「この電車でアラーム設定」「今乗った」を押せば、アプリを閉じても画面を消しても動きます。" +
+                            "荒井を出たら自動で始める機能を使うときだけ「常に許可」が必要です。",
+                        fontSize = 12.sp,
+                    )
+                    TextButton(onClick = { background.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION) }) {
+                        Text("自動開始を使う（「常に許可」にする）")
+                    }
+                }
+            }
+            return
+        }
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("権限の設定が必要です", fontWeight = FontWeight.Bold)
                 if (missingBasic.isNotEmpty()) {
                     OutlinedButton(onClick = { basic.launch(missingBasic.toTypedArray()) }) {
-                        Text("位置情報・身体活動・通知を許可")
-                    }
-                } else if (missingBackground) {
-                    Text("自動開始と乗り過ごし判定のため、位置情報は「常に許可」にしてください", fontSize = 12.sp)
-                    OutlinedButton(onClick = { background.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION) }) {
-                        Text("位置情報を「常に許可」にする")
+                        Text("位置情報（使用中のみで可）・身体活動・通知を許可")
                     }
                 }
                 if (missingFullScreen) {

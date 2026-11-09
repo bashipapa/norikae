@@ -34,6 +34,25 @@ object AlarmScheduler {
         am.setAlarmClock(AlarmManager.AlarmClockInfo(triggerAt, showIntent), operation(ctx, alarm.kind))
     }
 
+    /** アラームのテスト: [seconds] 秒後に、本番と同じ方法（setAlarmClock）で鳴らす */
+    fun scheduleTest(ctx: Context, seconds: Int) {
+        val am = ctx.getSystemService(AlarmManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !am.canScheduleExactAlarms()) {
+            Notifier.info(ctx, "正確なアラームの権限がありません。アプリの「権限」から許可してください")
+            return
+        }
+        val showIntent = PendingIntent.getActivity(
+            ctx, 0, Intent(ctx, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val operation = PendingIntent.getBroadcast(
+            ctx, 300,
+            Intent(ctx, AlarmReceiver::class.java).setAction(AlarmReceiver.ACTION_TEST),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        am.setAlarmClock(AlarmManager.AlarmClockInfo(System.currentTimeMillis() + seconds * 1000L, showIntent), operation)
+    }
+
     fun cancel(ctx: Context, kind: AlarmKind) {
         ctx.getSystemService(AlarmManager::class.java).cancel(operation(ctx, kind))
     }
