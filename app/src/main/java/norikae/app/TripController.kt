@@ -81,7 +81,7 @@ object TripController {
         if (!shouldStart) return
         // 明石は特急・普通どちらに乗ったか分からないので、乗った時刻に一番近い列車にする
         if (!startFromBoardingNow(ctx, left.first, fromForeground = false)) {
-            Notifier.info(ctx, "飲み会モード：乗車を検知しましたが、経路を決められません。アプリで「荒井→新開地の所要分」を設定してください")
+            Notifier.info(ctx, "飲み会モード：乗車を検知しましたが、経路を決められません。アプリ右上の設定で「荒井→新開地の所要分」を設定してください")
         }
     }
 

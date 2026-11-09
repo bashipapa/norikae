@@ -11,6 +11,8 @@ import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -26,7 +28,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -45,6 +55,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -85,11 +96,24 @@ class MainActivity : ComponentActivity() {
         Ringer.ensureChannel(this)
         Notifier.ensureChannel(this)
         Sensing.registerAll(this)
-        setContent { MaterialTheme { Surface(Modifier.fillMaxSize()) { MainScreen() } } }
+        enableEdgeToEdge()
+        setContent {
+            MaterialTheme {
+                Surface(Modifier.fillMaxSize()) {
+                    var showSettings by rememberSaveable { mutableStateOf(false) }
+                    if (showSettings) {
+                        SettingsScreen(onBack = { showSettings = false })
+                    } else {
+                        MainScreen(onOpenSettings = { showSettings = true })
+                    }
+                }
+            }
+        }
     }
 
+    @OptIn(ExperimentalMaterial3Api::class)
     @Composable
-    private fun MainScreen() {
+    private fun MainScreen(onOpenSettings: () -> Unit) {
         // 30秒ごと、または操作のたびに作り直す
         var tick by remember { mutableIntStateOf(0) }
         LaunchedEffect(Unit) { while (true) { delay(30_000); tick++ } }
@@ -134,22 +158,41 @@ class MainActivity : ComponentActivity() {
             )
         }
 
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("のりかえアラーム", fontWeight = FontWeight.Bold) },
+                    actions = {
+                        IconButton(onClick = onOpenSettings) {
+                            Icon(Icons.Filled.Settings, contentDescription = "設定")
+                        }
+                    },
+                )
+            },
+        ) { padding ->
         LazyColumn(
-            Modifier.fillMaxSize().padding(horizontal = 16.dp),
+            Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
-                Column(Modifier.padding(top = 8.dp)) {
-                    Text("荒井・明石 → 新開地 → 北鈴蘭台", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Column {
                     val drinking = DrinkingModeRule().isDrinkingTime(now)
                     Text(
                         "現在 $now｜" + if (drinking) "飲み会モードの時間帯（21時以降）" else "飲み会モードは21時から",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 13.sp,
                     )
+                    if (!serviceDay) {
+                        Text(
+                            if (!weekday) "今日は土日なので自動開始しません" else "「今日は休み」なので自動開始しません（右上の設定で変更）",
+                            color = RED,
+                            fontSize = 13.sp,
+                        )
+                    }
                 }
             }
 
-            item { PermissionCard() }
+            item { PermissionCard(showOptional = false) }
 
             if (trip != null) {
                 item {
@@ -173,35 +216,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            item {
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (serviceDay) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.errorContainer,
-                    ),
-                ) {
-                    Column(Modifier.padding(12.dp)) {
-                        Text(
-                            when {
-                                !weekday -> "今日は土日なので自動開始しません（平日専用。時刻表も平日ダイヤです）"
-                                !serviceDay -> "「今日は休み」にしているので自動開始しません"
-                                else -> "平日：21時以降に荒井・山陽明石から乗ると自動でアラームを設定します"
-                            },
-                            fontSize = 13.sp,
-                        )
-                        if (weekday) {
-                            Row {
-                                FilterChip(
-                                    selected = !serviceDay,
-                                    onClick = { Store.setDayOff(ctx, date, serviceDay); refresh() },
-                                    label = { Text("今日は休み（祝日など）") },
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 乗る駅のタブ：荒井 / 明石（特急）/ 明石（普通）
+            // 乗る駅のタブ：荒井 / 明石（普通）/ 明石（特急）
             item {
                 TabRow(selectedTabIndex = tabIndex) {
                     StartTab.entries.forEachIndexed { i, t ->
@@ -220,7 +235,7 @@ class MainActivity : ComponentActivity() {
                         if (TripController.startFromBoardingNow(ctx, tab.origin, tab.filter)) {
                             toast("乗車時刻からアラームを設定しました")
                         } else if (sanyoMissing) {
-                            toast("経路を決められません。下の「荒井→新開地の所要分」を設定してください")
+                            toast("経路を決められません。右上の設定で「荒井→新開地の所要分」を設定してください")
                         } else {
                             toast("この時刻の電車では帰れません（終電後）")
                         }
@@ -257,9 +272,67 @@ class MainActivity : ComponentActivity() {
                 RouteCard(route, recommended = route == recommended) { confirmRoute = route }
             }
 
-            item { AlarmTestCard() }
-            item { SettingsCard(onChanged = refresh) }
             item { Spacer(Modifier.padding(bottom = 24.dp)) }
+        }
+        }
+    }
+
+    /** 設定画面（右上の歯車から開く） */
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Composable
+    private fun SettingsScreen(onBack: () -> Unit) {
+        BackHandler(onBack = onBack)
+        var tick by remember { mutableIntStateOf(0) }
+        val refresh: () -> Unit = { tick++ }
+        val ctx = this
+        val (date, _) = remember(tick) { TripController.now() }
+        val serviceDay = Store.isServiceDay(ctx, date)
+        val weekday = isWeekday(date)
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("設定", fontWeight = FontWeight.Bold) },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
+                        }
+                    },
+                )
+            },
+        ) { padding ->
+            LazyColumn(
+                Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                // 平日・休みの設定
+                item {
+                    Card {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("平日・休みの設定", fontWeight = FontWeight.Bold)
+                            Text(
+                                when {
+                                    !weekday -> "今日は土日なので自動開始しません（平日専用。時刻表も平日ダイヤです）"
+                                    !serviceDay -> "「今日は休み」にしているので自動開始しません"
+                                    else -> "平日：21時以降に荒井・山陽明石から乗ると自動でアラームを設定します"
+                                },
+                                fontSize = 13.sp,
+                            )
+                            if (weekday) {
+                                FilterChip(
+                                    selected = !serviceDay,
+                                    onClick = { Store.setDayOff(ctx, date, serviceDay); refresh() },
+                                    label = { Text("今日は休み（祝日など）") },
+                                )
+                                Text("祝日は自動で判定しないので、休みの日はここで止めてください（その日だけ有効）", fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+                item { PermissionCard(showOptional = true) }
+                item { AlarmTestCard() }
+                item { SettingsCard(onChanged = refresh) }
+                item { Spacer(Modifier.padding(bottom = 24.dp)) }
+            }
         }
     }
 
@@ -468,7 +541,7 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun PermissionCard() {
+    private fun PermissionCard(showOptional: Boolean) {
         val ctx = this
         var tick by remember { mutableIntStateOf(0) }
         val basic = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
@@ -491,7 +564,7 @@ class MainActivity : ComponentActivity() {
         val missingExact = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !am.canScheduleExactAlarms()
 
         val requiredOk = missingBasic.isEmpty() && !missingFullScreen && !missingExact
-        if (requiredOk && !missingBackground) return
+        if (requiredOk && (!missingBackground || !showOptional)) return
         if (requiredOk) {
             // 必須はそろっている。「常に許可」は自動開始を使うときだけ必要
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
@@ -558,8 +631,8 @@ private enum class StartTab(
     val redLabel: Boolean = false,
 ) {
     ARAI("荒井", Origin.ARAI, { true }),
-    AKASHI_LIMITED("明石（特急）", Origin.AKASHI, { it.type.isLimited }, redLabel = true),
     AKASHI_LOCAL("明石（普通）", Origin.AKASHI, { it.type == TrainType.LOCAL }),
+    AKASHI_LIMITED("明石（特急）", Origin.AKASHI, { it.type.isLimited }, redLabel = true),
 }
 
 /** 駅名・行先の括弧書きを省く（神戸三宮(阪神) → 神戸三宮） */
