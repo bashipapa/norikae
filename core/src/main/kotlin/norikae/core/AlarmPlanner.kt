@@ -53,7 +53,15 @@ object AlarmPlanner {
     }
 
     fun kitaAlarms(train: ShintetsuTrain, settings: AlarmSettings = AlarmSettings()): List<PlannedAlarm> {
-        val arr = train.kitaSuzurandaiArr ?: return emptyList()
+        val arr = train.finalArr ?: return emptyList()
+        if (train.endsAtSuzurandai) {
+            // 鈴蘭台止まり（終電後）。終点なので乗り過ごしは無いが、車内で寝続けないよう起こす
+            return listOf(
+                PlannedAlarm(AlarmKind.KITA_PRE, arr - settings.kitaPreMinutes, "まもなく終点の鈴蘭台。起きてください（鈴蘭台からタクシー）"),
+                PlannedAlarm(AlarmKind.KITA_MAIN, arr - settings.mainMinutes, "次は終点の鈴蘭台。降りてください"),
+                PlannedAlarm(AlarmKind.KITA_CHECK, arr + settings.checkAfterMinutes, ""),
+            )
+        }
         val transfer = if (train.transferAtSuzurandai) "鈴蘭台で三田行きに乗り換え。" else ""
         return listOf(
             PlannedAlarm(AlarmKind.KITA_PRE, arr - settings.kitaPreMinutes, "${transfer}まもなく北鈴蘭台。起きてください"),

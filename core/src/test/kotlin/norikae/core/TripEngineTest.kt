@@ -168,4 +168,43 @@ class TripEngineTest {
         assertFalse(rule.shouldStart(t("22:30"), Motion.IN_VEHICLE, nearArai = null, leftAraiAt = t("22:00")))
         assertFalse(rule.shouldStart(t("22:05"), Motion.WALKING, nearArai = true, leftAraiAt = null))
     }
+
+    @Test
+    fun taxiRouteWakesAtSuzurandaiTerminal() {
+        val train = tt.shintetsu.first { it.dep == t("24:03") }
+        val sanyo = SanyoTrain(t("22:47"), TrainType.LOCAL, "新開地", t("24:00"), null)
+        val route = Route(sanyo, t("24:00"), false, train, train.finalArr!!)
+        val start = engine.start(route, "2026-11-09")
+        assertTrue(start.state.taxi)
+        val kitaAlarms = start.actions.filterIsInstance<TripAction.Schedule>().single().alarms.filter { !it.kind.isShinkaichi }
+        assertEquals(listOf("24:12", "24:16", "24:19"), kitaAlarms.map { it.at.toString() })
+        var s = start.state
+        s = engine.reduce(s, TripEvent.MotionChanged(Motion.WALKING, t("24:00"))).state
+        // 鈴蘭台止まりに乗っても「電車違い」にはしない
+        val boarded = engine.reduce(s, TripEvent.MotionChanged(Motion.IN_VEHICLE, t("24:04")))
+        assertTrue(boarded.actions.none { it is TripAction.Ring && it.kind == RingKind.WRONG_LINE })
+        s = boarded.state
+        // 終点を過ぎても乗ったまま → 乗り過ごしではなく「終点です、起きて」
+        val check = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.KITA_CHECK, t("24:19")))
+        assertEquals(Phase.RIDING_SHINTETSU, check.state.phase)
+        val ring = check.actions.filterIsInstance<TripAction.Ring>().single()
+        assertEquals(RingKind.WAKE, ring.kind)
+        assertTrue(ring.message.contains("終点の鈴蘭台"), ring.message)
+        // 歩いたら完了
+        val walked = engine.reduce(check.state, TripEvent.MotionChanged(Motion.WALKING, t("24:20")))
+        assertEquals(Phase.DONE, walked.state.phase)
+    }
+
+    @Test
+    fun missedLastTrainToKitaSwitchesToTaxi() {
+        // 予定は 23:50 道場南口行きだったが、実際は 24:03 鈴蘭台止まりに乗った
+        val train = tt.shintetsu.first { it.dep == t("23:50") }
+        val sanyo = SanyoTrain(t("22:19"), TrainType.LOCAL, "x", t("23:37"), null)
+        var s = engine.start(Route(sanyo, t("23:37"), false, train, train.finalArr!!), "2026-11-09").state
+        s = engine.reduce(s, TripEvent.MotionChanged(Motion.WALKING, t("23:37"))).state
+        val tr = engine.reduce(s, TripEvent.MotionChanged(Motion.IN_VEHICLE, t("24:04")))
+        assertTrue(tr.state.taxi)
+        assertEquals("24:17", ServiceTime(tr.state.kitaArr).toString())
+        assertTrue(tr.actions.any { it is TripAction.Notify && it.message.contains("タクシー") })
+    }
 }

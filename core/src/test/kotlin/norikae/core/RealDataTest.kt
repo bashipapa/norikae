@@ -22,13 +22,15 @@ class RealDataTest {
     fun routesFrom21() {
         val routes = planner.plan(t("21:00"))
         assertEquals(
-            listOf("21:00", "21:15", "21:32", "21:47", "22:04", "22:19", "22:33"),
+            listOf("21:00", "21:15", "21:32", "21:47", "22:04", "22:19", "22:33", "22:47"),
             routes.map { it.sanyo!!.dep.toString() },
         )
         assertEquals(
-            listOf("23:00", "22:45", "23:15", "23:35", "24:08", "24:08", "23:50"),
+            listOf("23:00", "22:45", "23:15", "23:35", "24:08", "24:08", "23:50", "24:17"),
             routes.map { it.kitaArr.toString() },
         )
+        // 最後の 22:47 だけが鈴蘭台止まり（タクシー）
+        assertEquals(listOf(false, false, false, false, false, false, false, true), routes.map { it.taxiFromSuzurandai })
     }
 
     @Test
@@ -41,10 +43,30 @@ class RealDataTest {
     }
 
     @Test
-    fun after2247NoWayHome() {
-        // 22:47 は新開地 24:00着 → 北鈴蘭台行きはもう無い
-        assertTrue(planner.plan(t("22:40")).isEmpty())
-        assertEquals(null, planner.routeFromBoarding(t("22:48")))
+    fun after2247OnlyTaxiFromSuzurandai() {
+        // 22:47 は新開地 24:00着 → 北鈴蘭台行きはもう無いが、24:03 鈴蘭台止まりに乗れる（鈴蘭台 24:17着 → タクシー）
+        val routes = planner.plan(t("22:40"))
+        assertEquals(1, routes.size)
+        val r = routes.single()
+        assertTrue(r.taxiFromSuzurandai)
+        assertEquals("鈴蘭台", r.alightStation)
+        assertEquals("24:03", r.shintetsu.dep.toString())
+        assertEquals("24:17", r.kitaArr.toString())
+        assertEquals("24:03", planner.routeFromBoarding(t("22:48"))!!.shintetsu.dep.toString())
+        // 23:03 以降は新開地に行けないので候補なし
+        assertTrue(planner.plan(t("23:00")).isEmpty())
+        assertEquals("22:47", planner.lastTaxiRoute()!!.sanyo!!.dep.toString())
+        // 電車で北鈴蘭台まで帰れる荒井発の最終は 22:33 のまま
+        assertEquals("22:33", planner.lastDepartureRoute()!!.sanyo!!.dep.toString())
+    }
+
+    @Test
+    fun taxiRouteIsNotRecommendedWhenTrainRouteExists() {
+        val routes = planner.plan(t("22:30"))
+        assertEquals(listOf("22:33", "22:47"), routes.map { it.sanyo!!.dep.toString() })
+        assertEquals("22:33", planner.recommend(routes)!!.sanyo!!.dep.toString())
+        // タクシー経路しか無ければそれを出す
+        assertEquals("22:47", planner.recommend(planner.plan(t("22:40")))!!.sanyo!!.dep.toString())
     }
 
     @Test
@@ -92,5 +114,51 @@ class StationDataTest {
         assertEquals("東二見", t2233.transferAt)
         assertEquals("22:48", t2233.transferArr.toString())
         assertEquals("22:53", t2233.transferDep.toString())
+    }
+}
+
+/** 山陽明石発（明石（特急）・明石（普通）タブ） */
+class AkashiDataTest {
+    private val tt = loadRealTimetable()
+    private val planner = RoutePlanner(tt)
+    private val limited: (SanyoTrain) -> Boolean = { it.type.isLimited }
+    private val local: (SanyoTrain) -> Boolean = { it.type == TrainType.LOCAL }
+
+    @Test
+    fun akashiLoaded() {
+        assertTrue(tt.sanyoAkashi.isNotEmpty())
+        assertTrue(tt.sanyoAkashi.any { it.type == TrainType.DIRECT_LIMITED })
+        assertTrue(tt.sanyoAkashi.any { it.type == TrainType.LOCAL })
+        assertTrue(StationId.AKASHI in tt.stations)
+    }
+
+    @Test
+    fun limitedTabRoutes() {
+        val routes = planner.plan(t("21:00"), Origin.AKASHI, limited)
+        assertTrue(routes.all { it.sanyo!!.type.isLimited && it.origin == Origin.AKASHI })
+        assertEquals("21:13", routes.first().sanyo!!.dep.toString())
+        // 北鈴蘭台まで電車で帰れる最終は 23:01（新開地 23:24 → 23:30 → 北鈴蘭台 23:50）
+        val last = planner.lastDepartureRoute(Origin.AKASHI, limited)!!
+        assertEquals("23:01", last.sanyo!!.dep.toString())
+        assertEquals("23:50", last.kitaArr.toString())
+        // 23:33 直通特急（御影行き）は鈴蘭台止まり → タクシー
+        assertEquals("23:33", planner.lastTaxiRoute(Origin.AKASHI, limited)!!.sanyo!!.dep.toString())
+    }
+
+    @Test
+    fun localTabRoutes() {
+        val routes = planner.plan(t("21:00"), Origin.AKASHI, local)
+        assertTrue(routes.all { it.sanyo!!.type == TrainType.LOCAL })
+        val last = planner.lastDepartureRoute(Origin.AKASHI, local)!!
+        assertEquals("23:04", last.sanyo!!.dep.toString())
+        assertEquals("24:08", last.kitaArr.toString())
+        assertEquals("23:22", planner.lastTaxiRoute(Origin.AKASHI, local)!!.sanyo!!.dep.toString())
+    }
+
+    @Test
+    fun boardingAtAkashiPicksByTab() {
+        // 21:14 に明石で乗車：特急タブなら 21:13 直通特急、普通タブなら 21:00 普通（21:15 はまだ発車前）
+        assertEquals("21:13", planner.routeFromBoarding(t("21:14"), Origin.AKASHI, limited)!!.sanyo!!.dep.toString())
+        assertEquals("21:15", planner.routeFromBoarding(t("21:16"), Origin.AKASHI, local)!!.sanyo!!.dep.toString())
     }
 }

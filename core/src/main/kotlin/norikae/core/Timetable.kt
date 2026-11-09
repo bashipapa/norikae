@@ -15,13 +15,22 @@ enum class TrainType(val label: String, val isLocal: Boolean) {
     DIRECT_LIMITED("直通特急", false),
     OTHER("その他", false);
 
+    /** 特急系（直通特急・特急・S特急）。画面では赤字 */
+    val isLimited: Boolean get() = this == DIRECT_LIMITED || this == LIMITED || this == S_LIMITED
+
     companion object {
         fun fromLabel(label: String): TrainType =
             entries.firstOrNull { it.label == label.replace("Ｓ", "S") } ?: OTHER
     }
 }
 
-/** 山陽電車（荒井発）の1本 */
+/** 山陽電車で乗る駅 */
+enum class Origin(val label: String, val station: StationId) {
+    ARAI("荒井", StationId.ARAI),
+    AKASHI("山陽明石", StationId.AKASHI),
+}
+
+/** 山陽電車（荒井発・山陽明石発）の1本 */
 data class SanyoTrain(
     val dep: ServiceTime,
     val type: TrainType,
@@ -63,8 +72,16 @@ data class ShintetsuTrain(
     /** 鈴蘭台で三田行きに乗り換えが必要か */
     val transferAtSuzurandai: Boolean,
     val note: String?,
+    /** 鈴蘭台着（鈴蘭台止まりの列車だけ入れている） */
+    val suzurandaiArr: ServiceTime? = null,
 ) {
     val reachesKitaSuzurandai: Boolean get() = kitaSuzurandaiArr != null
+
+    /** 鈴蘭台止まり（終電後の最終手段。鈴蘭台からタクシー） */
+    val endsAtSuzurandai: Boolean get() = kitaSuzurandaiArr == null && suzurandaiArr != null
+
+    /** 最後に降りる駅への到着（北鈴蘭台、鈴蘭台止まりなら鈴蘭台） */
+    val finalArr: ServiceTime? get() = kitaSuzurandaiArr ?: suzurandaiArr
 }
 
 data class UpTrain(val dep: ServiceTime, val dest: String)
@@ -74,13 +91,21 @@ data class Timetable(
     val transferMinutesAtShinkaichi: Int,
     /** 山陽の時刻表が空のときに使う、荒井→新開地の所要分 */
     val sanyoDefaultRunMinutes: Int?,
+    /** 荒井発 */
     val sanyo: List<SanyoTrain>,
     val shintetsu: List<ShintetsuTrain>,
     val kitaSuzurandaiUp: List<UpTrain>,
     val shintetsuRevision: String?,
     /** 駅の位置の初期値（アプリで「今いる場所を登録」すると上書きされる） */
     val stations: Map<StationId, LatLon> = emptyMap(),
+    /** 山陽明石発 */
+    val sanyoAkashi: List<SanyoTrain> = emptyList(),
 ) {
+    fun sanyoFrom(origin: Origin): List<SanyoTrain> = when (origin) {
+        Origin.ARAI -> sanyo
+        Origin.AKASHI -> sanyoAkashi
+    }
+
     companion object {
         private val json = Json { ignoreUnknownKeys = true }
 
@@ -97,6 +122,7 @@ private data class TimetableJson(
     val sanyoDefaultRunMinutes: Int? = null,
     val stations: Map<String, StationJson> = emptyMap(),
     val sanyo: WeekdayOnly<SanyoJson> = WeekdayOnly(),
+    val sanyoAkashi: WeekdayOnly<SanyoJson> = WeekdayOnly(),
     val shintetsu: WeekdayOnly<ShintetsuJson> = WeekdayOnly(),
     val kitaSuzurandaiUp: WeekdayOnly<UpJson> = WeekdayOnly(),
 ) {
@@ -104,6 +130,7 @@ private data class TimetableJson(
         transferMinutesAtShinkaichi = transferMinutesAtShinkaichi,
         sanyoDefaultRunMinutes = sanyoDefaultRunMinutes,
         sanyo = sanyo.weekday.map { it.toModel() }.sortedBy { it.dep },
+        sanyoAkashi = sanyoAkashi.weekday.map { it.toModel() }.sortedBy { it.dep },
         shintetsu = shintetsu.weekday.map { it.toModel() }.sortedBy { it.dep },
         kitaSuzurandaiUp = kitaSuzurandaiUp.weekday.map { UpTrain(ServiceTime.parse(it.dep), it.dest) }.sortedBy { it.dep },
         shintetsuRevision = meta?.shintetsuRevision,
@@ -158,6 +185,7 @@ private data class ShintetsuJson(
     @SerialName("kitaSuzurandai") val kitaSuzurandai: String? = null,
     val transferAtSuzurandai: Boolean = false,
     val note: String? = null,
+    val suzurandai: String? = null,
 ) {
     fun toModel() = ShintetsuTrain(
         dep = ServiceTime.parse(dep),
@@ -166,6 +194,7 @@ private data class ShintetsuJson(
         kitaSuzurandaiArr = kitaSuzurandai?.let(ServiceTime::parse),
         transferAtSuzurandai = transferAtSuzurandai,
         note = note,
+        suzurandaiArr = suzurandai?.let(ServiceTime::parse),
     )
 }
 

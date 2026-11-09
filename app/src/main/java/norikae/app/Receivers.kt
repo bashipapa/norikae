@@ -10,6 +10,7 @@ import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingEvent
 import norikae.core.AlarmKind
 import norikae.core.Motion
+import norikae.core.Origin
 import norikae.core.RingKind
 import norikae.core.TripEvent
 
@@ -50,14 +51,17 @@ class MotionReceiver : BroadcastReceiver() {
     }
 }
 
-/** 荒井駅の範囲を出た（自動開始用） */
+/** 乗る駅（荒井・山陽明石）の範囲を出た（自動開始用） */
 class GeofenceReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val event = GeofencingEvent.fromIntent(intent) ?: return
         if (event.hasError()) return
         if (event.geofenceTransition != Geofence.GEOFENCE_TRANSITION_EXIT) return
+        val origin = event.triggeringGeofences.orEmpty()
+            .firstNotNullOfOrNull { g -> Origin.entries.firstOrNull { it.name == g.requestId } }
+            ?: return
         val (date, time) = TripController.now()
-        Store.saveLeftAraiAt(context, date, time)
+        Store.saveLeftOrigin(context, date, origin, time)
     }
 }
 

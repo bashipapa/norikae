@@ -20,6 +20,7 @@ data class LatLon(val lat: Double, val lon: Double) {
 
 enum class StationId(val label: String) {
     ARAI("荒井"),
+    AKASHI("山陽明石"),
     SHINKAICHI("新開地"),
     SUZURANDAI("鈴蘭台"),
     KITA_SUZURANDAI("北鈴蘭台"),

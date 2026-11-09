@@ -113,7 +113,7 @@ object Notifier {
         ensureChannel(ctx)
         val text = state?.let {
             val shinkaichi = it.shinkaichiArr?.let { m -> "新開地 ${ServiceTime(m)}着 → " } ?: ""
-            "${phaseLabel(it)}｜$shinkaichi${ServiceTime(it.shintetsuDep)} ${it.shintetsuDest}行き → 北鈴蘭台 ${ServiceTime(it.kitaArr)}着"
+            "${phaseLabel(it)}｜$shinkaichi${ServiceTime(it.shintetsuDep)} ${it.shintetsuDest}行き → ${if (it.taxi) "鈴蘭台" else "北鈴蘭台"} ${ServiceTime(it.kitaArr)}着" + if (it.taxi) "（タクシー）" else ""
         } ?: "乗車中"
         return NotificationCompat.Builder(ctx, CHANNEL_INFO)
             .setSmallIcon(R.drawable.ic_stat_norikae)

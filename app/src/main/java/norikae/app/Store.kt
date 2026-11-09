@@ -2,6 +2,7 @@ package norikae.app
 
 import android.content.Context
 import norikae.core.LatLon
+import norikae.core.Origin
 import norikae.core.ServiceTime
 import norikae.core.StationId
 import norikae.core.StationLocations
@@ -16,7 +17,8 @@ object Store {
     private const val KEY_TRIP = "trip_state"
     private const val KEY_RUN_MINUTES = "sanyo_run_minutes"
     private const val KEY_DAY_OFF = "day_off"
-    private const val KEY_LEFT_ARAI = "left_arai_at"
+    private const val KEY_LEFT_ORIGIN = "left_origin_at"
+    private const val KEY_LAST_TAB = "last_tab"
     private const val KEY_LOCAL_TOLERANCE = "local_tolerance"
 
     private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -83,17 +85,23 @@ object Store {
     fun isServiceDay(ctx: Context, serviceDate: LocalDate): Boolean =
         isWeekday(serviceDate) && !isDayOff(ctx, serviceDate)
 
-    // ---- 荒井を出た時刻（自動開始用） ----
+    // ---- 乗る駅（荒井・山陽明石）の範囲を出た時刻（自動開始用） ----
 
-    fun leftAraiAt(ctx: Context, serviceDate: LocalDate): ServiceTime? {
-        val parts = prefs(ctx).getString(KEY_LEFT_ARAI, null)?.split("|") ?: return null
-        if (parts.size != 2 || parts[0] != serviceDate.toString()) return null
-        return ServiceTime(parts[1].toInt())
+    /** その営業日に最後に出た乗る駅と時刻 */
+    fun leftOrigin(ctx: Context, serviceDate: LocalDate): Pair<Origin, ServiceTime>? {
+        val parts = prefs(ctx).getString(KEY_LEFT_ORIGIN, null)?.split("|") ?: return null
+        if (parts.size != 3 || parts[0] != serviceDate.toString()) return null
+        val origin = Origin.entries.firstOrNull { it.name == parts[1] } ?: return null
+        return origin to ServiceTime(parts[2].toInt())
     }
 
-    fun saveLeftAraiAt(ctx: Context, serviceDate: LocalDate, time: ServiceTime) {
-        prefs(ctx).edit().putString(KEY_LEFT_ARAI, "$serviceDate|${time.minutes}").apply()
+    fun saveLeftOrigin(ctx: Context, serviceDate: LocalDate, origin: Origin, time: ServiceTime) {
+        prefs(ctx).edit().putString(KEY_LEFT_ORIGIN, "$serviceDate|${origin.name}|${time.minutes}").apply()
     }
+
+    /** 最後に開いていたタブ */
+    fun lastTab(ctx: Context): Int = prefs(ctx).getInt(KEY_LAST_TAB, 0)
+    fun saveLastTab(ctx: Context, index: Int) { prefs(ctx).edit().putInt(KEY_LAST_TAB, index).apply() }
 
     // ---- 時刻表 ----
 

@@ -14,23 +14,24 @@ import com.google.android.gms.location.DetectedActivity
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingRequest
 import com.google.android.gms.location.LocationServices
-import norikae.core.StationId
+import norikae.core.Origin
 
 /**
  * 常時登録しておく判定（電池消費が少ないもの）。
  * - 乗り物/歩行/停止 の切り替わり
- * - 荒井駅の範囲から出たこと（ジオフェンス）
+ * - 乗る駅（荒井・山陽明石）の範囲から出たこと（ジオフェンス）
  */
 object Sensing {
-    private const val ARAI_GEOFENCE_ID = "arai"
-    private const val ARAI_RADIUS_M = 300f
+    /** 以前の版で使っていた荒井のジオフェンスの ID（消すため） */
+    private const val OLD_ARAI_ID = "arai"
+    private const val ORIGIN_RADIUS_M = 300f
 
     fun has(ctx: Context, permission: String) =
         ContextCompat.checkSelfPermission(ctx, permission) == PackageManager.PERMISSION_GRANTED
 
     fun registerAll(ctx: Context) {
         registerMotion(ctx)
-        registerAraiGeofence(ctx)
+        registerOriginGeofences(ctx)
     }
 
     @SuppressLint("MissingPermission")
@@ -47,23 +48,29 @@ object Sensing {
             .requestActivityTransitionUpdates(ActivityTransitionRequest(transitions), motionIntent(ctx))
     }
 
+    /** 乗る駅（荒井・山陽明石）の範囲を出たことを検知するジオフェンス。requestId は Origin の名前 */
     @SuppressLint("MissingPermission")
-    fun registerAraiGeofence(ctx: Context) {
-        val arai = Store.stations(ctx)[StationId.ARAI] ?: return
+    fun registerOriginGeofences(ctx: Context) {
         if (!has(ctx, Manifest.permission.ACCESS_FINE_LOCATION)) return
         if (!has(ctx, Manifest.permission.ACCESS_BACKGROUND_LOCATION)) return
-        val geofence = Geofence.Builder()
-            .setRequestId(ARAI_GEOFENCE_ID)
-            .setCircularRegion(arai.lat, arai.lon, ARAI_RADIUS_M)
-            .setExpirationDuration(Geofence.NEVER_EXPIRE)
-            .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_EXIT)
-            .build()
+        val stations = Store.stations(ctx)
+        val geofences = Origin.entries.mapNotNull { origin ->
+            val loc = stations[origin.station] ?: return@mapNotNull null
+            Geofence.Builder()
+                .setRequestId(origin.name)
+                .setCircularRegion(loc.lat, loc.lon, ORIGIN_RADIUS_M)
+                .setExpirationDuration(Geofence.NEVER_EXPIRE)
+                .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_EXIT)
+                .build()
+        }
+        if (geofences.isEmpty()) return
         val request = GeofencingRequest.Builder()
             .setInitialTrigger(0)
-            .addGeofence(geofence)
+            .addGeofences(geofences)
             .build()
         val client = LocationServices.getGeofencingClient(ctx)
-        client.removeGeofences(listOf(ARAI_GEOFENCE_ID)).addOnCompleteListener {
+        val ids = Origin.entries.map { it.name } + OLD_ARAI_ID
+        client.removeGeofences(ids).addOnCompleteListener {
             client.addGeofences(request, geofenceIntent(ctx))
         }
     }

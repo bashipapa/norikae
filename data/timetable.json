@@ -1,6 +1,6 @@
 {
   "meta": {
-    "description": "荒井→新開地→北鈴蘭台 の帰宅用時刻表（平日のみ・21時以降〜終電）",
+    "description": "荒井・山陽明石 → 新開地 → 北鈴蘭台 の帰宅用時刻表（平日のみ・21時以降〜終電）",
     "timeFormat": "HH:MM。0時以降は 24:03 のように24を足して書く",
     "shintetsuRevision": "2025-03-15",
     "shintetsuSources": [
@@ -8,7 +8,7 @@
       "https://www.shintetsu.co.jp/cms/wp-content/uploads/station-docs/20250315/kita_suzurandai-timetable.pdf"
     ],
     "shintetsuNote": "北鈴蘭台の着時刻は、北鈴蘭台駅時刻表（有馬・三田方面）の発車時刻を着時刻とみなしている",
-    "sanyoSource": "Yahoo!路線情報 荒井駅 大阪梅田・新開地方面 https://transit.yahoo.co.jp/timetable/26264/5920 （各列車の停車駅一覧から作成）",
+    "sanyoSource": "Yahoo!路線情報 荒井駅・山陽明石駅 大阪梅田・新開地方面（各列車の停車駅一覧から作成）",
     "sanyoRetrievedAt": "2026-11-09",
     "sanyoNote": "新開地まで行かない列車は、終点で乗り換える次の電車の新開地着を入れている",
     "stationsSource": "駅の位置: Yahoo!路線情報の各駅ページ（2026-11-09 取得）"
@@ -21,7 +21,8 @@
     "SUZURANDAI": {"name": "鈴蘭台", "lat": 34.723744, "lon": 135.145803},
     "KITA_SUZURANDAI": {"name": "北鈴蘭台", "lat": 34.738993, "lon": 135.151746},
     "YAMANOMACHI": {"name": "山の街", "lat": 34.746159, "lon": 135.153052},
-    "SUZURANDAI_NISHIGUCHI": {"name": "鈴蘭台西口", "lat": 34.726521, "lon": 135.14072}
+    "SUZURANDAI_NISHIGUCHI": {"name": "鈴蘭台西口", "lat": 34.726521, "lon": 135.14072},
+    "AKASHI": {"name": "山陽明石", "lat": 34.648917, "lon": 134.992956}
   },
   "sanyo": {
     "weekday": [
@@ -38,6 +39,27 @@
       {"dep": "23:37", "type": "普通", "dest": "東二見", "transferAt": "東二見", "shinkaichi": null, "transferNote": "東二見 23:53着。新開地へ行く電車なし", "transferArr": "23:53"},
       {"dep": "24:00", "type": "普通", "dest": "東二見", "transferAt": "東二見", "shinkaichi": null, "transferNote": "東二見 24:15着。新開地へ行く電車なし", "transferArr": "24:15"},
       {"dep": "24:14", "type": "普通", "dest": "東二見", "transferAt": "東二見", "shinkaichi": null, "transferNote": "東二見 24:30着。新開地へ行く電車なし", "transferArr": "24:30"}
+    ]
+  },
+  "sanyoAkashi": {
+    "weekday": [
+      {"dep": "21:00", "type": "普通", "dest": "神戸三宮(阪急・神戸高速)", "shinkaichi": "21:41"},
+      {"dep": "21:13", "type": "直通特急", "dest": "大阪梅田(阪神線)", "shinkaichi": "21:36"},
+      {"dep": "21:15", "type": "普通", "dest": "神戸三宮(阪神)", "shinkaichi": "21:57"},
+      {"dep": "21:28", "type": "直通特急", "dest": "大阪梅田(阪神線)", "shinkaichi": "21:51"},
+      {"dep": "21:30", "type": "普通", "dest": "神戸三宮(阪急・神戸高速)", "shinkaichi": "22:14"},
+      {"dep": "21:43", "type": "直通特急", "dest": "大阪梅田(阪神線)", "shinkaichi": "22:08"},
+      {"dep": "21:47", "type": "普通", "dest": "神戸三宮(阪神)", "shinkaichi": "22:29"},
+      {"dep": "21:59", "type": "直通特急", "dest": "大阪梅田(阪神線)", "shinkaichi": "22:22"},
+      {"dep": "22:10", "type": "普通", "dest": "神戸三宮(阪急・神戸高速)", "shinkaichi": "22:43"},
+      {"dep": "22:31", "type": "直通特急", "dest": "大阪梅田(阪神線)", "shinkaichi": "22:54"},
+      {"dep": "22:33", "type": "普通", "dest": "神戸三宮(阪急・神戸高速)", "shinkaichi": "23:07"},
+      {"dep": "22:42", "type": "普通", "dest": "東須磨", "transferAt": "東須磨", "transferArr": "23:06", "transferDep": "23:29", "transferTrainType": "普通", "transferTrainDest": "高速神戸", "shinkaichi": "23:37", "transferNote": "東須磨 23:06着 → 23:29発 普通 高速神戸行きに乗り換え"},
+      {"dep": "23:01", "type": "直通特急", "dest": "大阪梅田(阪神線)", "shinkaichi": "23:24"},
+      {"dep": "23:04", "type": "普通", "dest": "高速神戸", "shinkaichi": "23:37"},
+      {"dep": "23:22", "type": "普通", "dest": "新開地", "shinkaichi": "24:00"},
+      {"dep": "23:33", "type": "直通特急", "dest": "御影(兵庫県・阪神線)", "shinkaichi": "23:55"},
+      {"dep": "23:57", "type": "普通", "dest": "東須磨", "transferAt": "東須磨", "transferArr": "24:22", "shinkaichi": null, "transferNote": "東須磨 24:22着。新開地へ行く電車なし"}
     ]
   },
   "shintetsu": {
@@ -60,7 +82,7 @@
       {"dep": "23:30", "type": "普通", "dest": "三田", "kitaSuzurandai": "23:50"},
       {"dep": "23:34", "type": "準急", "dest": "三木", "kitaSuzurandai": "23:50", "transferAtSuzurandai": true, "note": "鈴蘭台で三田行きに乗り換え"},
       {"dep": "23:50", "type": "普通", "dest": "道場南口", "kitaSuzurandai": "24:08"},
-      {"dep": "24:03", "type": "普通", "dest": "鈴蘭台", "kitaSuzurandai": null, "note": "鈴蘭台止まり。北鈴蘭台に行かない"}
+      {"dep": "24:03", "type": "普通", "dest": "鈴蘭台", "kitaSuzurandai": null, "note": "鈴蘭台止まり（北鈴蘭台へは行かない）。鈴蘭台からタクシー", "suzurandai": "24:17"}
     ]
   },
   "kitaSuzurandaiUp": {

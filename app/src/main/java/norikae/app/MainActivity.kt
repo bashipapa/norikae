@@ -35,6 +35,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -59,7 +61,9 @@ import kotlinx.coroutines.delay
 import norikae.core.DrinkingModeRule
 import norikae.core.LatLon
 import norikae.core.RingKind
+import norikae.core.Origin
 import norikae.core.Route
+import norikae.core.SanyoTrain
 import norikae.core.ServiceTime
 import norikae.core.StationId
 import norikae.core.TrainType
@@ -97,10 +101,12 @@ class MainActivity : ComponentActivity() {
         val weekday = isWeekday(date)
         val timetable = Store.timetable(ctx)
         val planner = TripController.planner(ctx)
-        val routes = planner.plan(now)
+        var tabIndex by remember { mutableIntStateOf(Store.lastTab(ctx).coerceIn(0, StartTab.entries.size - 1)) }
+        val tab = StartTab.entries[tabIndex]
+        val routes = planner.plan(now, tab.origin, tab.filter)
         val recommended = planner.recommend(routes, Store.localTolerance(ctx))
         val trip = Store.trip(ctx)
-        val sanyoMissing = timetable.sanyo.isEmpty()
+        val sanyoMissing = timetable.sanyoFrom(tab.origin).isEmpty()
         var confirmRoute by remember { mutableStateOf<Route?>(null) }
 
         confirmRoute?.let { r ->
@@ -109,10 +115,11 @@ class MainActivity : ComponentActivity() {
                 title = { Text("この電車でアラームを設定しますか？") },
                 text = {
                     Text(
-                        (r.sanyo?.let { "荒井 ${it.dep}発 → " } ?: "") +
+                        (r.sanyo?.let { "${r.origin.label} ${it.dep}発 ${it.type.label} → " } ?: "") +
                             (r.sanyo?.transferAt?.let { "${shortName(it)}で乗換 → " } ?: "") +
                             (r.shinkaichiArr?.let { "新開地 ${it}着 → " } ?: "") +
-                            "神鉄 ${r.shintetsu.dep}発 → 北鈴蘭台 ${r.kitaArr}着",
+                            "神鉄 ${r.shintetsu.dep}発 → ${r.alightStation} ${r.kitaArr}着" +
+                            if (r.taxiFromSuzurandai) "\n\n終電後のため鈴蘭台止まりです。鈴蘭台からタクシーで帰ります" else "",
                     )
                 },
                 confirmButton = {
@@ -133,7 +140,7 @@ class MainActivity : ComponentActivity() {
         ) {
             item {
                 Column(Modifier.padding(top = 8.dp)) {
-                    Text("荒井 → 新開地 → 北鈴蘭台", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                    Text("荒井・明石 → 新開地 → 北鈴蘭台", fontSize = 22.sp, fontWeight = FontWeight.Bold)
                     val drinking = DrinkingModeRule().isDrinkingTime(now)
                     Text(
                         "現在 $now｜" + if (drinking) "飲み会モードの時間帯（21時以降）" else "飲み会モードは21時から",
@@ -150,11 +157,15 @@ class MainActivity : ComponentActivity() {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text("乗車中：${Notifier.phaseLabel(trip)}", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                             trip.shinkaichiArr?.let { Text("新開地 ${ServiceTime(it)}着") }
-                            Text("神戸電鉄 ${ServiceTime(trip.shintetsuDep)} ${trip.shintetsuDest}行き → 北鈴蘭台 ${ServiceTime(trip.kitaArr)}着")
+                            Text(
+                                "神戸電鉄 ${ServiceTime(trip.shintetsuDep)} ${trip.shintetsuDest}行き → " +
+                                    (if (trip.taxi) "鈴蘭台" else "北鈴蘭台") + " ${ServiceTime(trip.kitaArr)}着" +
+                                    if (trip.taxi) "（鈴蘭台からタクシー）" else "",
+                            )
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Button(onClick = {
                                     TripController.handle(ctx, TripEvent.UserFinished(TripController.now().second)); refresh()
-                                }) { Text("北鈴蘭台で降りた") }
+                                }) { Text(if (trip.taxi) "鈴蘭台で降りた" else "北鈴蘭台で降りた") }
                                 OutlinedButton(onClick = { TripController.end(ctx); refresh() }) { Text("中止") }
                             }
                         }
@@ -173,7 +184,7 @@ class MainActivity : ComponentActivity() {
                             when {
                                 !weekday -> "今日は土日なので自動開始しません（平日専用。時刻表も平日ダイヤです）"
                                 !serviceDay -> "「今日は休み」にしているので自動開始しません"
-                                else -> "平日：21時以降に荒井から乗ると自動でアラームを設定します"
+                                else -> "平日：21時以降に荒井・山陽明石から乗ると自動でアラームを設定します"
                             },
                             fontSize = 13.sp,
                         )
@@ -190,20 +201,33 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            // 乗る駅のタブ：荒井 / 明石（特急）/ 明石（普通）
+            item {
+                TabRow(selectedTabIndex = tabIndex) {
+                    StartTab.entries.forEachIndexed { i, t ->
+                        Tab(
+                            selected = i == tabIndex,
+                            onClick = { tabIndex = i; Store.saveLastTab(ctx, i) },
+                            text = { Text(t.label, fontSize = 13.sp, color = if (t.redLabel) RED else Color.Unspecified) },
+                        )
+                    }
+                }
+            }
+
             item {
                 Button(
                     onClick = {
-                        if (TripController.startFromBoardingNow(ctx)) {
+                        if (TripController.startFromBoardingNow(ctx, tab.origin, tab.filter)) {
                             toast("乗車時刻からアラームを設定しました")
                         } else if (sanyoMissing) {
                             toast("経路を決められません。下の「荒井→新開地の所要分」を設定してください")
                         } else {
-                            toast("この時刻の電車では北鈴蘭台まで帰れません（終電後）")
+                            toast("この時刻の電車では帰れません（終電後）")
                         }
                         refresh()
                     },
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("今、荒井で乗った（この時刻でアラーム設定）") }
+                ) { Text("今、${tab.label}で乗った（この時刻でアラーム設定）") }
             }
 
             item {
@@ -212,19 +236,23 @@ class MainActivity : ComponentActivity() {
                         if (sanyoMissing) "新開地発 北鈴蘭台行きの候補（山陽の時刻表は未入力）" else "帰り道の候補（タップでアラーム設定）",
                         fontWeight = FontWeight.Bold,
                     )
-                    planner.lastDepartureRoute()?.let {
-                        Text("荒井発の最終：${it.sanyo!!.dep}発（北鈴蘭台 ${it.kitaArr}着）", fontSize = 13.sp)
+                    planner.lastDepartureRoute(tab.origin, tab.filter)?.let {
+                        Text("北鈴蘭台まで電車で帰れる最終：${tab.origin.label} ${it.sanyo!!.dep}発（北鈴蘭台 ${it.kitaArr}着）", fontSize = 13.sp)
                     }
-                    planner.lastRoute()?.let {
-                        Text("神戸電鉄の最終：新開地 ${it.shintetsu.dep}発 ${it.shintetsu.dest}行き（北鈴蘭台 ${it.kitaArr}着）", fontSize = 13.sp)
+                    planner.lastTaxiRoute(tab.origin, tab.filter)?.let {
+                        Text(
+                            "鈴蘭台止まり（タクシー）に間に合う最終：${tab.origin.label} ${it.sanyo!!.dep}発（鈴蘭台 ${it.kitaArr}着）",
+                            fontSize = 13.sp,
+                            color = AMBER,
+                        )
                     }
                 }
             }
 
             if (routes.isEmpty()) {
-                item { Text("この時刻以降に北鈴蘭台へ帰れる電車はありません") }
+                item { Text("この時刻以降に帰れる電車はありません") }
             }
-            if (routes.isNotEmpty()) item { RouteHeader() }
+            if (routes.isNotEmpty()) item { RouteHeader(tab.origin) }
             items(routes) { route ->
                 RouteCard(route, recommended = route == recommended) { confirmRoute = route }
             }
@@ -235,12 +263,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** 一覧の列見出し（荒井発 → 乗り換え → 新開地着 → 北鈴蘭台着） */
+    /** 一覧の列見出し（荒井発／明石発 → 乗り換え → 新開地着 → 北鈴蘭台着） */
     @Composable
-    private fun RouteHeader() {
+    private fun RouteHeader(origin: Origin) {
         val muted = MaterialTheme.colorScheme.onSurfaceVariant
+        val from = if (origin == Origin.AKASHI) "明石発" else "荒井発"
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-            listOf("荒井発", "乗り換え", "新開地着", "北鈴蘭台着").forEachIndexed { i, label ->
+            listOf(from, "乗り換え", "新開地着", "北鈴蘭台着").forEachIndexed { i, label ->
                 if (i > 0) Spacer(Modifier.width(ARROW_W))
                 Text(label, modifier = Modifier.weight(1f), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = muted)
             }
@@ -262,6 +291,7 @@ class MainActivity : ComponentActivity() {
                     if (recommended) add("おすすめ" to MaterialTheme.colorScheme.primary)
                     if (route.umedaRisk) add("乗り過ごすと梅田まで行きます" to RED)
                     if (route.shintetsu.transferAtSuzurandai) add("鈴蘭台で三田行きに乗換" to MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (route.taxiFromSuzurandai) add("終電後：鈴蘭台止まり → タクシー" to AMBER)
                 }
                 if (badges.isNotEmpty()) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 6.dp)) {
@@ -269,19 +299,19 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-                    // 荒井発
+                    // 荒井発／明石発
                     TimeCell(
                         Modifier.weight(1f),
                         main = s?.dep?.toString() ?: "—",
                         sub1 = s?.type?.label,
                         sub2 = s?.dest?.let { shortName(it) + "行" },
-                        mainRed = s?.type?.isLimited() == true,
-                        subRed = s?.type?.isLimited() == true,
+                        mainRed = s?.type?.isLimited == true,
+                        subRed = s?.type?.isLimited == true,
                     )
                     Arrow()
                     // 乗り換え
                     if (s?.transferAt != null) {
-                        val red = s.transferTrainType?.isLimited() == true
+                        val red = s.transferTrainType?.isLimited == true
                         TimeCell(
                             Modifier.weight(1f),
                             main = shortName(s.transferAt!!),
@@ -300,16 +330,27 @@ class MainActivity : ComponentActivity() {
                         main = route.shinkaichiArr?.toString() ?: "—",
                         sub1 = "神鉄${route.shintetsu.dep}発",
                         sub2 = shortName(route.shintetsu.dest) + "行",
-                        mainRed = s?.arrivingType?.isLimited() == true,
+                        mainRed = s?.arrivingType?.isLimited == true,
                     )
                     Arrow()
-                    // 北鈴蘭台着
-                    TimeCell(
-                        Modifier.weight(1f),
-                        main = route.kitaArr.toString(),
-                        sub1 = if (route.shinkaichiEstimated && route.shinkaichiArr != null) "新開地着は推定" else null,
-                        sub2 = null,
-                    )
+                    // 北鈴蘭台着（鈴蘭台止まりなら鈴蘭台着 → タクシー）
+                    if (route.taxiFromSuzurandai) {
+                        TimeCell(
+                            Modifier.weight(1f),
+                            main = route.kitaArr.toString(),
+                            sub1 = "鈴蘭台着",
+                            sub2 = "→タクシー",
+                            mainAmber = true,
+                            subAmber = true,
+                        )
+                    } else {
+                        TimeCell(
+                            Modifier.weight(1f),
+                            main = route.kitaArr.toString(),
+                            sub1 = if (route.shinkaichiEstimated && route.shinkaichiArr != null) "新開地着は推定" else null,
+                            sub2 = null,
+                        )
+                    }
                 }
             }
         }
@@ -324,19 +365,23 @@ class MainActivity : ComponentActivity() {
         mainRed: Boolean = false,
         subRed: Boolean = false,
         mainSmall: Boolean = false,
+        mainAmber: Boolean = false,
+        subAmber: Boolean = false,
     ) {
         val muted = MaterialTheme.colorScheme.onSurfaceVariant
+        val mainColor = when { mainRed -> RED; mainAmber -> AMBER; else -> Color.Unspecified }
+        val subColor = when { subRed -> RED; subAmber -> AMBER; else -> muted }
         Column(modifier) {
             Text(
                 main,
                 fontSize = if (mainSmall) 15.sp else 20.sp,
                 fontWeight = FontWeight.Bold,
-                color = if (mainRed) RED else Color.Unspecified,
+                color = mainColor,
                 maxLines = 1,
                 modifier = if (mainSmall) Modifier.padding(top = 5.dp, bottom = 3.dp) else Modifier,
             )
-            sub1?.let { Text(it, fontSize = 11.sp, color = if (subRed) RED else muted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-            sub2?.let { Text(it, fontSize = 11.sp, color = if (subRed) RED else muted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            sub1?.let { Text(it, fontSize = 11.sp, color = subColor, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            sub2?.let { Text(it, fontSize = 11.sp, color = subColor, maxLines = 1, overflow = TextOverflow.Ellipsis) }
         }
     }
 
@@ -412,7 +457,7 @@ class MainActivity : ComponentActivity() {
                         if (saved[id] != null) {
                             TextButton(onClick = {
                                 Store.clearStation(ctx, id)
-                                if (id == StationId.ARAI) Sensing.registerAraiGeofence(ctx)
+                                if (id == StationId.ARAI || id == StationId.AKASHI) Sensing.registerOriginGeofences(ctx)
                                 onChanged()
                             }) { Text("戻す", fontSize = 12.sp) }
                         }
@@ -496,7 +541,7 @@ class MainActivity : ComponentActivity() {
             .addOnSuccessListener { loc ->
                 if (loc == null) { toast("位置を取得できませんでした。屋外で再度お試しください"); return@addOnSuccessListener }
                 Store.saveStation(this, id, LatLon(loc.latitude, loc.longitude))
-                if (id == StationId.ARAI) Sensing.registerAraiGeofence(this)
+                if (id == StationId.ARAI || id == StationId.AKASHI) Sensing.registerOriginGeofences(this)
                 toast("${id.label}を登録しました（誤差 約${loc.accuracy.toInt()}m）")
                 onChanged()
             }
@@ -505,12 +550,21 @@ class MainActivity : ComponentActivity() {
     private fun toast(text: String) = Toast.makeText(this, text, Toast.LENGTH_LONG).show()
 }
 
-/** 特急系（赤で表示する種別） */
-private fun TrainType.isLimited() =
-    this == TrainType.DIRECT_LIMITED || this == TrainType.LIMITED || this == TrainType.S_LIMITED
+/** 乗る駅のタブ */
+private enum class StartTab(
+    val label: String,
+    val origin: Origin,
+    val filter: (SanyoTrain) -> Boolean,
+    val redLabel: Boolean = false,
+) {
+    ARAI("荒井", Origin.ARAI, { true }),
+    AKASHI_LIMITED("明石（特急）", Origin.AKASHI, { it.type.isLimited }, redLabel = true),
+    AKASHI_LOCAL("明石（普通）", Origin.AKASHI, { it.type == TrainType.LOCAL }),
+}
 
 /** 駅名・行先の括弧書きを省く（神戸三宮(阪神) → 神戸三宮） */
 private fun shortName(name: String) = name.replace(Regex("[(（].*?[)）]"), "")
 
 private val RED = Color(0xFFC00000)
+private val AMBER = Color(0xFFB36B00)
 private val ARROW_W = 16.dp

@@ -6,8 +6,10 @@ import norikae.core.AlarmPlanner
 import norikae.core.AlarmSettings
 import norikae.core.AutoStartRule
 import norikae.core.Motion
+import norikae.core.Origin
 import norikae.core.Phase
 import norikae.core.Route
+import norikae.core.SanyoTrain
 import norikae.core.ServiceTime
 import norikae.core.RoutePlanner
 import norikae.core.Transition
@@ -46,9 +48,14 @@ object TripController {
     }
 
     /** 「今乗った」：実際の乗車時刻から経路を決めて開始 */
-    fun startFromBoardingNow(ctx: Context, fromForeground: Boolean = true): Boolean {
+    fun startFromBoardingNow(
+        ctx: Context,
+        origin: Origin = Origin.ARAI,
+        filter: (SanyoTrain) -> Boolean = { true },
+        fromForeground: Boolean = true,
+    ): Boolean {
         val (_, time) = now()
-        val route = planner(ctx).routeFromBoarding(time) ?: return false
+        val route = planner(ctx).routeFromBoarding(time, origin, filter) ?: return false
         start(ctx, route, fromForeground)
         return true
     }
@@ -68,10 +75,12 @@ object TripController {
         }
         // 平日専用：土日と「今日は休み」の日は自動開始しない
         if (!Store.isServiceDay(ctx, date)) return
-        // 受信時点では位置がないので、「荒井の範囲を出た時刻」（GeofenceReceiver が保存）で判定する
-        val shouldStart = AutoStartRule().shouldStart(time, motion, nearArai = null, leftAraiAt = Store.leftAraiAt(ctx, date))
+        // 受信時点では位置がないので、「乗る駅（荒井・山陽明石）の範囲を出た時刻」（GeofenceReceiver が保存）で判定する
+        val left = Store.leftOrigin(ctx, date) ?: return
+        val shouldStart = AutoStartRule().shouldStart(time, motion, nearArai = null, leftAraiAt = left.second)
         if (!shouldStart) return
-        if (!startFromBoardingNow(ctx, fromForeground = false)) {
+        // 明石は特急・普通どちらに乗ったか分からないので、乗った時刻に一番近い列車にする
+        if (!startFromBoardingNow(ctx, left.first, fromForeground = false)) {
             Notifier.info(ctx, "飲み会モード：乗車を検知しましたが、経路を決められません。アプリで「荒井→新開地の所要分」を設定してください")
         }
     }

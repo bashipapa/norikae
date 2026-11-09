@@ -39,8 +39,11 @@ data class TripState(
     val umedaRisk: Boolean,
     val shintetsuDep: Int,
     val shintetsuDest: String,
+    /** 最後に電車を降りる時刻（北鈴蘭台着。鈴蘭台止まりなら鈴蘭台着） */
     val kitaArr: Int,
     val transferAtSuzurandai: Boolean,
+    /** 鈴蘭台止まりに乗り、鈴蘭台からタクシーで帰る */
+    val taxi: Boolean = false,
     val lastMotion: Motion? = null,
     val lastLat: Double? = null,
     val lastLon: Double? = null,
@@ -100,6 +103,7 @@ class TripEngine(
         const val SHINKAICHI_RADIUS_M = 700.0
         // 北鈴蘭台〜山の街は約800m、鈴蘭台〜鈴蘭台西口は約560m。範囲が重ならない大きさにしている
         const val KITA_RADIUS_M = 400.0
+        const val SUZURANDAI_RADIUS_M = 400.0
         const val WRONG_LINE_RADIUS_M = 300.0
         const val YAMANOMACHI_RADIUS_M = 300.0
         /** 乗り過ごして山の街で降り、反対ホームに移るまでの余裕 */
@@ -117,11 +121,13 @@ class TripEngine(
             shintetsuDest = route.shintetsu.dest,
             kitaArr = route.kitaArr.minutes,
             transferAtSuzurandai = route.shintetsu.transferAtSuzurandai,
+            taxi = route.taxiFromSuzurandai,
         )
         val summary = buildString {
             append("アラームON：")
             route.shinkaichiArr?.let { append("新開地 ${it}着 → ") }
-            append("神戸電鉄 ${route.shintetsu.dep} ${route.shintetsu.dest}行き → 北鈴蘭台 ${route.kitaArr}着")
+            append("神戸電鉄 ${route.shintetsu.dep} ${route.shintetsu.dest}行き → ${route.alightStation} ${route.kitaArr}着")
+            if (route.taxiFromSuzurandai) append("（鈴蘭台からタクシー）")
             if (route.umedaRisk) append("（梅田行きに注意）")
         }
         return Transition(state, listOf(TripAction.Schedule(AlarmPlanner.plan(route, settings)), TripAction.Notify(summary)))
@@ -169,7 +175,7 @@ class TripEngine(
 
             Phase.OVERSHOT_SHINKAICHI -> {
                 // 乗り過ごした先で降りた。戻ってくる前提で、乗れそうな電車で北鈴蘭台アラームを仮に入れ直す
-                val fallback = planner.connectAtShinkaichi(t + 10)
+                val fallback = planner.connectOrTaxi(t + 10)
                 val actions = mutableListOf<TripAction>(
                     TripAction.StopRinging,
                     TripAction.Cancel(SHINKAICHI_KINDS),
@@ -179,6 +185,7 @@ class TripEngine(
                 if (fallback != null) {
                     next = next.withShintetsu(fallback)
                     actions += TripAction.Schedule(AlarmPlanner.kitaAlarms(fallback, settings))
+                    if (fallback.endsAtSuzurandai) actions += TripAction.Notify("北鈴蘭台行きはもうありません。${fallback.dep} 鈴蘭台行きに乗り、鈴蘭台からタクシーで帰ってください")
                 } else {
                     actions += TripAction.Notify("北鈴蘭台へ行く電車はもうありません")
                 }
@@ -187,8 +194,16 @@ class TripEngine(
 
             Phase.RIDING_SHINTETSU -> {
                 val timeOk = t.minutes >= state.kitaArr - 3
-                val nearOk = stations.isNear(StationId.KITA_SUZURANDAI, loc, KITA_RADIUS_M) != false
-                if (timeOk && nearOk) done(state, "おかえりなさい（北鈴蘭台で降りました）") else Transition(state, emptyList())
+                val nearOk = if (state.taxi) {
+                    stations.isNear(StationId.SUZURANDAI, loc, SUZURANDAI_RADIUS_M) != false
+                } else {
+                    stations.isNear(StationId.KITA_SUZURANDAI, loc, KITA_RADIUS_M) != false
+                }
+                when {
+                    !(timeOk && nearOk) -> Transition(state, emptyList())
+                    state.taxi -> done(state, "鈴蘭台で降りました。タクシーで北鈴蘭台へ帰ってください")
+                    else -> done(state, "おかえりなさい（北鈴蘭台で降りました）")
+                }
             }
 
             Phase.OVERSHOT_KITA -> done(state, "降りたのを確認しました。${returnGuidance(state, t)}")
@@ -201,6 +216,17 @@ class TripEngine(
         if (state.phase != Phase.TRANSFERRING) return Transition(state, emptyList())
         val next = state.copy(phase = Phase.RIDING_SHINTETSU)
         val train = planner.shintetsuFromBoarding(t) ?: return Transition(next, emptyList())
+        if (train.endsAtSuzurandai) {
+            // 鈴蘭台止まり（終電後）。路線は合っているので警告せず、鈴蘭台で起こす
+            if (train.dep.minutes == state.shintetsuDep) return Transition(next, emptyList())
+            return Transition(
+                next.withShintetsu(train),
+                listOf(
+                    TripAction.Schedule(AlarmPlanner.kitaAlarms(train, settings)),
+                    TripAction.Notify("鈴蘭台止まりの終電です（鈴蘭台 ${train.suzurandaiArr}着）。鈴蘭台からタクシーで帰ってください"),
+                ),
+            )
+        }
         if (!train.reachesKitaSuzurandai) {
             return Transition(
                 next.copy(wrongLineWarned = true),
@@ -213,7 +239,7 @@ class TripEngine(
             next.withShintetsu(train),
             listOf(
                 TripAction.Schedule(AlarmPlanner.kitaAlarms(train, settings)),
-                TripAction.Notify("神戸電鉄 ${train.dep} ${train.dest}行きに合わせました（北鈴蘭台 ${train.kitaSuzurandaiArr}着）"),
+                TripAction.Notify("神戸電鉄 ${train.dep} ${train.dest}行きに合わせました（北鈴蘭台 ${train.finalArr}着）"),
             ),
         )
     }
@@ -230,7 +256,7 @@ class TripEngine(
                 listOf(TripAction.Ring(RingKind.WRONG_LINE, "粟生線（鈴蘭台西口方面）を走っています。北鈴蘭台に行きません。鈴蘭台に戻ってください")),
             )
         }
-        if (stations.isNear(StationId.YAMANOMACHI, e.location, YAMANOMACHI_RADIUS_M) == true) {
+        if (!state.taxi && stations.isNear(StationId.YAMANOMACHI, e.location, YAMANOMACHI_RADIUS_M) == true) {
             return overshootKita(state, e.at)
         }
         return Transition(state, emptyList())
@@ -258,8 +284,12 @@ class TripEngine(
             AlarmKind.SHINKAICHI_PRE ->
                 "まもなく新開地。起きてください" + if (state.umedaRisk) "（乗り過ごすと梅田まで行きます）" else ""
             AlarmKind.SHINKAICHI_MAIN -> "次は新開地。降りて神戸電鉄 ${ServiceTime(state.shintetsuDep)} ${state.shintetsuDest}行きへ"
-            AlarmKind.KITA_PRE -> (if (state.transferAtSuzurandai) "鈴蘭台で三田行きに乗り換え。" else "") + "まもなく北鈴蘭台。起きてください"
-            AlarmKind.KITA_MAIN -> "次は北鈴蘭台。降りてください"
+            AlarmKind.KITA_PRE -> when {
+                state.taxi -> "まもなく終点の鈴蘭台。起きてください（鈴蘭台からタクシー）"
+                state.transferAtSuzurandai -> "鈴蘭台で三田行きに乗り換え。まもなく北鈴蘭台。起きてください"
+                else -> "まもなく北鈴蘭台。起きてください"
+            }
+            AlarmKind.KITA_MAIN -> if (state.taxi) "次は終点の鈴蘭台。降りてください" else "次は北鈴蘭台。降りてください"
             else -> ""
         }
         return Transition(state, listOf(TripAction.Ring(RingKind.WAKE, message)))
@@ -297,11 +327,29 @@ class TripEngine(
             }
             else -> return Transition(state, emptyList())
         }
+        if (state.taxi) return checkSuzurandaiTerminal(state, t)
         val near = stations.isNear(StationId.KITA_SUZURANDAI, loc, KITA_RADIUS_M)
         if (near == true && state.lastMotion != Motion.IN_VEHICLE) {
             return done(state, "おかえりなさい（北鈴蘭台にいます）")
         }
         return overshootKita(state, t)
+    }
+
+    /** 鈴蘭台止まり：終点なので乗り過ごしは無い。まだ乗っていそうなら起きるまで鳴らす */
+    private fun checkSuzurandaiTerminal(state: TripState, t: ServiceTime): Transition {
+        val near = stations.isNear(StationId.SUZURANDAI, state.lastLocation, SUZURANDAI_RADIUS_M)
+        if (near == true && state.lastMotion != Motion.IN_VEHICLE) {
+            return done(state, "鈴蘭台に着きました。タクシーで北鈴蘭台へ帰ってください")
+        }
+        if (state.kitaRings >= settings.maxOvershootRings) return Transition(state, emptyList())
+        val rings = state.kitaRings + 1
+        val actions = mutableListOf<TripAction>(
+            TripAction.Ring(RingKind.WAKE, "終点の鈴蘭台です！起きて降りてください（鈴蘭台からタクシー）"),
+        )
+        if (rings < settings.maxOvershootRings) {
+            actions += TripAction.Schedule(listOf(PlannedAlarm(AlarmKind.KITA_CHECK, t + 1, "")))
+        }
+        return Transition(state.copy(kitaRings = rings), actions)
     }
 
     private fun overshootKita(state: TripState, t: ServiceTime): Transition {
@@ -330,8 +378,9 @@ class TripEngine(
     private fun TripState.withShintetsu(train: ShintetsuTrain) = copy(
         shintetsuDep = train.dep.minutes,
         shintetsuDest = train.dest,
-        kitaArr = train.kitaSuzurandaiArr!!.minutes,
+        kitaArr = train.finalArr!!.minutes,
         transferAtSuzurandai = train.transferAtSuzurandai,
+        taxi = train.endsAtSuzurandai,
     )
 }
 
