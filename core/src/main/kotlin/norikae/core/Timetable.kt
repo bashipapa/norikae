@@ -30,6 +30,9 @@ data class SanyoTrain(
     val shinkaichiArr: ServiceTime?,
     /** 途中で乗り換える駅（例: 山陽明石）。直通なら null */
     val transferAt: String?,
+    /** 乗り換え駅の着・発時刻 */
+    val transferArr: ServiceTime? = null,
+    val transferDep: ServiceTime? = null,
     /** 乗り換え先の列車の種別・行先（乗り換えがあるとき） */
     val transferTrainType: TrainType? = null,
     val transferTrainDest: String? = null,
@@ -75,6 +78,8 @@ data class Timetable(
     val shintetsu: List<ShintetsuTrain>,
     val kitaSuzurandaiUp: List<UpTrain>,
     val shintetsuRevision: String?,
+    /** 駅の位置の初期値（アプリで「今いる場所を登録」すると上書きされる） */
+    val stations: Map<StationId, LatLon> = emptyMap(),
 ) {
     companion object {
         private val json = Json { ignoreUnknownKeys = true }
@@ -90,6 +95,7 @@ private data class TimetableJson(
     val meta: MetaJson? = null,
     val transferMinutesAtShinkaichi: Int = 3,
     val sanyoDefaultRunMinutes: Int? = null,
+    val stations: Map<String, StationJson> = emptyMap(),
     val sanyo: WeekdayOnly<SanyoJson> = WeekdayOnly(),
     val shintetsu: WeekdayOnly<ShintetsuJson> = WeekdayOnly(),
     val kitaSuzurandaiUp: WeekdayOnly<UpJson> = WeekdayOnly(),
@@ -101,8 +107,14 @@ private data class TimetableJson(
         shintetsu = shintetsu.weekday.map { it.toModel() }.sortedBy { it.dep },
         kitaSuzurandaiUp = kitaSuzurandaiUp.weekday.map { UpTrain(ServiceTime.parse(it.dep), it.dest) }.sortedBy { it.dep },
         shintetsuRevision = meta?.shintetsuRevision,
+        stations = stations.mapNotNull { (key, v) ->
+            StationId.entries.firstOrNull { it.name == key }?.let { it to LatLon(v.lat, v.lon) }
+        }.toMap(),
     )
 }
+
+@Serializable
+private data class StationJson(val name: String? = null, val lat: Double, val lon: Double)
 
 @Serializable
 private data class MetaJson(val shintetsuRevision: String? = null)
@@ -118,6 +130,8 @@ private data class SanyoJson(
     val dest: String,
     val shinkaichi: String? = null,
     val transferAt: String? = null,
+    val transferArr: String? = null,
+    val transferDep: String? = null,
     val transferTrainType: String? = null,
     val transferTrainDest: String? = null,
     val transferNote: String? = null,
@@ -128,6 +142,8 @@ private data class SanyoJson(
         dest = dest,
         shinkaichiArr = shinkaichi?.let(ServiceTime::parse),
         transferAt = transferAt,
+        transferArr = transferArr?.let(ServiceTime::parse),
+        transferDep = transferDep?.let(ServiceTime::parse),
         transferTrainType = transferTrainType?.let(TrainType::fromLabel),
         transferTrainDest = transferTrainDest,
         transferNote = transferNote,

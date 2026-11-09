@@ -14,6 +14,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,7 +26,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -43,7 +44,11 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -57,6 +62,7 @@ import norikae.core.RingKind
 import norikae.core.Route
 import norikae.core.ServiceTime
 import norikae.core.StationId
+import norikae.core.TrainType
 import norikae.core.TripEvent
 import norikae.core.isWeekday
 
@@ -95,6 +101,31 @@ class MainActivity : ComponentActivity() {
         val recommended = planner.recommend(routes, Store.localTolerance(ctx))
         val trip = Store.trip(ctx)
         val sanyoMissing = timetable.sanyo.isEmpty()
+        var confirmRoute by remember { mutableStateOf<Route?>(null) }
+
+        confirmRoute?.let { r ->
+            AlertDialog(
+                onDismissRequest = { confirmRoute = null },
+                title = { Text("この電車でアラームを設定しますか？") },
+                text = {
+                    Text(
+                        (r.sanyo?.let { "荒井 ${it.dep}発 → " } ?: "") +
+                            (r.sanyo?.transferAt?.let { "${shortName(it)}で乗換 → " } ?: "") +
+                            (r.shinkaichiArr?.let { "新開地 ${it}着 → " } ?: "") +
+                            "神鉄 ${r.shintetsu.dep}発 → 北鈴蘭台 ${r.kitaArr}着",
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        TripController.start(ctx, r)
+                        toast("アラームを設定しました")
+                        confirmRoute = null
+                        refresh()
+                    }) { Text("設定する") }
+                },
+                dismissButton = { TextButton(onClick = { confirmRoute = null }) { Text("やめる") } },
+            )
+        }
 
         LazyColumn(
             Modifier.fillMaxSize().padding(horizontal = 16.dp),
@@ -178,7 +209,7 @@ class MainActivity : ComponentActivity() {
             item {
                 Column {
                     Text(
-                        if (sanyoMissing) "新開地発 北鈴蘭台行きの候補（山陽の時刻表は未入力）" else "帰り道の候補（普通優先）",
+                        if (sanyoMissing) "新開地発 北鈴蘭台行きの候補（山陽の時刻表は未入力）" else "帰り道の候補（タップでアラーム設定）",
                         fontWeight = FontWeight.Bold,
                     )
                     planner.lastDepartureRoute()?.let {
@@ -193,12 +224,9 @@ class MainActivity : ComponentActivity() {
             if (routes.isEmpty()) {
                 item { Text("この時刻以降に北鈴蘭台へ帰れる電車はありません") }
             }
+            if (routes.isNotEmpty()) item { RouteHeader() }
             items(routes) { route ->
-                RouteCard(route, recommended = route == recommended) {
-                    TripController.start(ctx, route)
-                    toast("アラームを設定しました")
-                    refresh()
-                }
+                RouteCard(route, recommended = route == recommended) { confirmRoute = route }
             }
 
             item { AlarmTestCard() }
@@ -207,8 +235,21 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** 一覧の列見出し（荒井発 → 乗り換え → 新開地着 → 北鈴蘭台着） */
     @Composable
-    private fun RouteCard(route: Route, recommended: Boolean, onStart: () -> Unit) {
+    private fun RouteHeader() {
+        val muted = MaterialTheme.colorScheme.onSurfaceVariant
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+            listOf("荒井発", "乗り換え", "新開地着", "北鈴蘭台着").forEachIndexed { i, label ->
+                if (i > 0) Spacer(Modifier.width(ARROW_W))
+                Text(label, modifier = Modifier.weight(1f), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = muted)
+            }
+        }
+    }
+
+    @Composable
+    private fun RouteCard(route: Route, recommended: Boolean, onClick: () -> Unit) {
+        val s = route.sanyo
         Card(
             colors = if (recommended) {
                 CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
@@ -216,29 +257,98 @@ class MainActivity : ComponentActivity() {
                 CardDefaults.cardColors()
             },
         ) {
-            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (recommended) AssistChip(onClick = {}, label = { Text("おすすめ") })
-                    route.sanyo?.let { AssistChip(onClick = {}, label = { Text(if (it.isLocalOnly) "普通のみ" else it.arrivingType.label) }) }
-                    if (route.umedaRisk) AssistChip(onClick = {}, label = { Text("梅田注意") })
-                    if (route.shintetsu.transferAtSuzurandai) AssistChip(onClick = {}, label = { Text("鈴蘭台で乗換") })
+            Column(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(12.dp)) {
+                val badges = buildList {
+                    if (recommended) add("おすすめ" to MaterialTheme.colorScheme.primary)
+                    if (route.umedaRisk) add("乗り過ごすと梅田まで行きます" to RED)
+                    if (route.shintetsu.transferAtSuzurandai) add("鈴蘭台で三田行きに乗換" to MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                route.sanyo?.let { s ->
-                    Text("荒井 ${s.dep}発 ${s.type.label} ${s.dest}行き")
-                    s.transferNote?.let { Text("↳ $it", fontSize = 13.sp) }
+                if (badges.isNotEmpty()) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 6.dp)) {
+                        badges.forEach { (t, c) -> Text(t, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = c) }
+                    }
                 }
-                route.shinkaichiArr?.let {
-                    Text("新開地 ${it}着" + if (route.shinkaichiEstimated) "（推定）" else "")
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                    // 荒井発
+                    TimeCell(
+                        Modifier.weight(1f),
+                        main = s?.dep?.toString() ?: "—",
+                        sub1 = s?.type?.label,
+                        sub2 = s?.dest?.let { shortName(it) + "行" },
+                        mainRed = s?.type?.isLimited() == true,
+                        subRed = s?.type?.isLimited() == true,
+                    )
+                    Arrow()
+                    // 乗り換え
+                    if (s?.transferAt != null) {
+                        val red = s.transferTrainType?.isLimited() == true
+                        TimeCell(
+                            Modifier.weight(1f),
+                            main = shortName(s.transferAt!!),
+                            sub1 = s.transferDep?.let { "${it}発" } ?: "新開地へ行けない",
+                            sub2 = s.transferTrainType?.label,
+                            mainSmall = true,
+                            subRed = red,
+                        )
+                    } else {
+                        TimeCell(Modifier.weight(1f), main = "なし", sub1 = "そのまま", sub2 = null, mainSmall = true)
+                    }
+                    Arrow()
+                    // 新開地着
+                    TimeCell(
+                        Modifier.weight(1f),
+                        main = route.shinkaichiArr?.toString() ?: "—",
+                        sub1 = "神鉄${route.shintetsu.dep}発",
+                        sub2 = shortName(route.shintetsu.dest) + "行",
+                        mainRed = s?.arrivingType?.isLimited() == true,
+                    )
+                    Arrow()
+                    // 北鈴蘭台着
+                    TimeCell(
+                        Modifier.weight(1f),
+                        main = route.kitaArr.toString(),
+                        sub1 = if (route.shinkaichiEstimated && route.shinkaichiArr != null) "新開地着は推定" else null,
+                        sub2 = null,
+                    )
                 }
-                Text(
-                    "神戸電鉄 ${route.shintetsu.dep}発 ${route.shintetsu.type.label} ${route.shintetsu.dest}行き",
-                    fontWeight = FontWeight.Bold,
-                )
-                Text("北鈴蘭台 ${route.kitaArr}着")
-                route.shintetsu.note?.let { Text(it, fontSize = 12.sp) }
-                TextButton(onClick = onStart) { Text("この電車でアラーム設定") }
             }
         }
+    }
+
+    @Composable
+    private fun TimeCell(
+        modifier: Modifier,
+        main: String,
+        sub1: String?,
+        sub2: String?,
+        mainRed: Boolean = false,
+        subRed: Boolean = false,
+        mainSmall: Boolean = false,
+    ) {
+        val muted = MaterialTheme.colorScheme.onSurfaceVariant
+        Column(modifier) {
+            Text(
+                main,
+                fontSize = if (mainSmall) 15.sp else 22.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (mainRed) RED else Color.Unspecified,
+                maxLines = 1,
+                modifier = if (mainSmall) Modifier.padding(top = 5.dp, bottom = 3.dp) else Modifier,
+            )
+            sub1?.let { Text(it, fontSize = 11.sp, color = if (subRed) RED else muted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            sub2?.let { Text(it, fontSize = 11.sp, color = if (subRed) RED else muted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        }
+    }
+
+    @Composable
+    private fun Arrow() {
+        Text(
+            "→",
+            modifier = Modifier.width(ARROW_W).padding(top = 6.dp),
+            fontSize = 14.sp,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 
     @Composable
@@ -266,7 +376,6 @@ class MainActivity : ComponentActivity() {
     private fun SettingsCard(onChanged: () -> Unit) {
         val ctx = this
         var runText by remember { mutableStateOf(Store.sanyoRunMinutes(ctx)?.toString() ?: "") }
-        val stations = Store.stations(ctx)
         Card {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("設定", fontWeight = FontWeight.Bold)
@@ -285,15 +394,28 @@ class MainActivity : ComponentActivity() {
                 }
                 Text("山陽の時刻表が未入力の間は、乗車時刻＋この分数で新開地着を推定します", fontSize = 12.sp)
 
-                Text("駅の位置（その駅にいるときに押す）", fontWeight = FontWeight.Bold)
-                Text("登録すると、位置を使った判定（荒井を出たら自動開始・乗り過ごし・粟生線）が有効になります", fontSize = 12.sp)
+                Text("駅の位置", fontWeight = FontWeight.Bold)
+                Text(
+                    "初期値として各駅の位置（Yahoo!路線情報）が入っているので、登録しなくても判定に使います。" +
+                        "ホームの位置などで判定がずれるときだけ、その駅にいるときに上書きしてください",
+                    fontSize = 12.sp,
+                )
+                val saved = Store.savedStations(ctx)
                 StationId.entries.forEach { id ->
-                    Row {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            "${id.label}：" + if (stations[id] != null) "登録済み" else "未登録",
-                            modifier = Modifier.width(180.dp).padding(top = 12.dp),
+                            "${id.label}：" + if (saved[id] != null) "自分で登録" else "初期値",
+                            modifier = Modifier.width(150.dp),
+                            fontSize = 13.sp,
                         )
-                        TextButton(onClick = { registerHere(id, onChanged) }) { Text("今いる場所を登録") }
+                        TextButton(onClick = { registerHere(id, onChanged) }) { Text("今いる場所で上書き", fontSize = 12.sp) }
+                        if (saved[id] != null) {
+                            TextButton(onClick = {
+                                Store.clearStation(ctx, id)
+                                if (id == StationId.ARAI) Sensing.registerAraiGeofence(ctx)
+                                onChanged()
+                            }) { Text("戻す", fontSize = 12.sp) }
+                        }
                     }
                 }
             }
@@ -382,3 +504,13 @@ class MainActivity : ComponentActivity() {
 
     private fun toast(text: String) = Toast.makeText(this, text, Toast.LENGTH_LONG).show()
 }
+
+/** 特急系（赤で表示する種別） */
+private fun TrainType.isLimited() =
+    this == TrainType.DIRECT_LIMITED || this == TrainType.LIMITED || this == TrainType.S_LIMITED
+
+/** 駅名・行先の括弧書きを省く（神戸三宮(阪神) → 神戸三宮） */
+private fun shortName(name: String) = name.replace(Regex("[(（].*?[)）]"), "")
+
+private val RED = Color(0xFFC00000)
+private val ARROW_W = 16.dp

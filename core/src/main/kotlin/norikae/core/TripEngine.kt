@@ -98,9 +98,10 @@ class TripEngine(
         val KITA_KINDS = setOf(AlarmKind.KITA_PRE, AlarmKind.KITA_MAIN, AlarmKind.KITA_CHECK)
 
         const val SHINKAICHI_RADIUS_M = 700.0
-        const val KITA_RADIUS_M = 500.0
-        const val WRONG_LINE_RADIUS_M = 400.0
-        const val YAMANOMACHI_RADIUS_M = 400.0
+        // 北鈴蘭台〜山の街は約800m、鈴蘭台〜鈴蘭台西口は約560m。範囲が重ならない大きさにしている
+        const val KITA_RADIUS_M = 400.0
+        const val WRONG_LINE_RADIUS_M = 300.0
+        const val YAMANOMACHI_RADIUS_M = 300.0
         /** 乗り過ごして山の街で降り、反対ホームに移るまでの余裕 */
         const val RETURN_MARGIN_MIN = 5
     }

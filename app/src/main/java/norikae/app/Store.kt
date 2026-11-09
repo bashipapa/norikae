@@ -34,14 +34,22 @@ object Store {
 
     // ---- 駅の位置 ----
 
-    fun stations(ctx: Context): StationLocations {
+    /** 判定に使う駅の位置：時刻表の初期値（Yahoo!路線情報の駅の位置）に、自分で登録した位置を重ねたもの */
+    fun stations(ctx: Context): StationLocations =
+        StationLocations(timetable(ctx).stations).withOverrides(savedStations(ctx))
+
+    /** 自分で「今いる場所を登録」した駅の位置 */
+    fun savedStations(ctx: Context): Map<StationId, LatLon> {
         val p = prefs(ctx)
-        val map = StationId.entries.mapNotNull { id ->
+        return StationId.entries.mapNotNull { id ->
             val text = p.getString("station_${id.name}", null) ?: return@mapNotNull null
             val (lat, lon) = text.split(",").map { it.toDouble() }
             id to LatLon(lat, lon)
         }.toMap()
-        return StationLocations(map)
+    }
+
+    fun clearStation(ctx: Context, id: StationId) {
+        prefs(ctx).edit().remove("station_${id.name}").apply()
     }
 
     fun saveStation(ctx: Context, id: StationId, location: LatLon) {

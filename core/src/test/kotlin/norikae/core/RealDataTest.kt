@@ -65,3 +65,32 @@ class RealDataTest {
         assertEquals("21:00", planner.recommend(routes, 15)!!.sanyo!!.dep.toString())
     }
 }
+
+class StationDataTest {
+    private val tt = loadRealTimetable()
+
+    @Test
+    fun allStationsHaveDefaultLocations() {
+        assertEquals(StationId.entries.toSet(), tt.stations.keys)
+    }
+
+    @Test
+    fun neighbouringStationRadiiDoNotOverlap() {
+        val kita = tt.stations.getValue(StationId.KITA_SUZURANDAI)
+        val yama = tt.stations.getValue(StationId.YAMANOMACHI)
+        val suzu = tt.stations.getValue(StationId.SUZURANDAI)
+        val nishi = tt.stations.getValue(StationId.SUZURANDAI_NISHIGUCHI)
+        // 北鈴蘭台の半径400m と 山の街の半径300m が重ならない
+        assertTrue(kita.distanceTo(yama) > 700, "北鈴蘭台〜山の街 ${kita.distanceTo(yama)}m")
+        // 鈴蘭台（正しい路線）にいるときに 鈴蘭台西口の半径300m に入らない
+        assertTrue(suzu.distanceTo(nishi) > 300, "鈴蘭台〜鈴蘭台西口 ${suzu.distanceTo(nishi)}m")
+    }
+
+    @Test
+    fun transferTimesParsed() {
+        val t2233 = tt.sanyo.first { it.dep == t("22:33") }
+        assertEquals("東二見", t2233.transferAt)
+        assertEquals("22:48", t2233.transferArr.toString())
+        assertEquals("22:53", t2233.transferDep.toString())
+    }
+}

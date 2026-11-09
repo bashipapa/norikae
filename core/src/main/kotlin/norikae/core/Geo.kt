@@ -32,6 +32,9 @@ enum class StationId(val label: String) {
  * 未登録の駅は位置判定を使わず、時刻と乗り物/歩行の判定だけで動く。
  */
 data class StationLocations(val map: Map<StationId, LatLon> = emptyMap()) {
+    /** [overrides] を優先して重ねる（アプリで登録した位置 > 時刻表の初期値） */
+    fun withOverrides(overrides: Map<StationId, LatLon>) = StationLocations(map + overrides)
+
     operator fun get(id: StationId): LatLon? = map[id]
 
     /** [here] が駅 [id] から [radiusMeters] 以内か。駅が未登録なら null（判定できない） */
