@@ -329,7 +329,7 @@ class MainActivity : ComponentActivity() {
         Column(modifier) {
             Text(
                 main,
-                fontSize = if (mainSmall) 15.sp else 22.sp,
+                fontSize = if (mainSmall) 15.sp else 20.sp,
                 fontWeight = FontWeight.Bold,
                 color = if (mainRed) RED else Color.Unspecified,
                 maxLines = 1,
