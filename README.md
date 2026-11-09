@@ -1,5 +1,7 @@
 # のりかえアラーム（norikae）
 
+全体構成の1枚資料：[docs/norikae-architecture.pptx](docs/norikae-architecture.pptx)（A4横）
+
 荒井（山陽電車）→ 新開地 → 北鈴蘭台（神戸電鉄）の**平日の**帰り道で、寝過ごして降り損ねるのを防ぐ個人用の Android アプリ。
 
 - 平日の21時以降に荒井から電車に乗ったら「飲み会モード」として自動でアラームを入れる
