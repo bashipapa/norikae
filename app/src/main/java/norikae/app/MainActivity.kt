@@ -51,13 +51,13 @@ import androidx.compose.ui.unit.sp
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import kotlinx.coroutines.delay
-import norikae.core.DayType
 import norikae.core.DrinkingModeRule
 import norikae.core.LatLon
 import norikae.core.Route
 import norikae.core.ServiceTime
 import norikae.core.StationId
 import norikae.core.TripEvent
+import norikae.core.isWeekday
 
 class MainActivity : ComponentActivity() {
 
@@ -78,13 +78,14 @@ class MainActivity : ComponentActivity() {
 
         val ctx = this
         val (date, now) = remember(tick) { TripController.now() }
-        val dayType = Store.dayType(ctx, date)
+        val serviceDay = Store.isServiceDay(ctx, date)
+        val weekday = isWeekday(date)
         val timetable = Store.timetable(ctx)
         val planner = TripController.planner(ctx)
-        val routes = planner.plan(dayType, now)
+        val routes = planner.plan(now)
         val recommended = planner.recommend(routes, Store.localTolerance(ctx))
         val trip = Store.trip(ctx)
-        val sanyoMissing = timetable.forDay(dayType).sanyo.isEmpty()
+        val sanyoMissing = timetable.sanyo.isEmpty()
 
         LazyColumn(
             Modifier.fillMaxSize().padding(horizontal = 16.dp),
@@ -122,20 +123,30 @@ class MainActivity : ComponentActivity() {
             }
 
             item {
-                Column {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(
-                            selected = dayType == DayType.WEEKDAY,
-                            onClick = { Store.overrideDayType(ctx, date, DayType.WEEKDAY); refresh() },
-                            label = { Text("平日ダイヤ") },
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (serviceDay) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.errorContainer,
+                    ),
+                ) {
+                    Column(Modifier.padding(12.dp)) {
+                        Text(
+                            when {
+                                !weekday -> "今日は土日なので自動開始しません（平日専用。時刻表も平日ダイヤです）"
+                                !serviceDay -> "「今日は休み」にしているので自動開始しません"
+                                else -> "平日：21時以降に荒井から乗ると自動でアラームを設定します"
+                            },
+                            fontSize = 13.sp,
                         )
-                        FilterChip(
-                            selected = dayType == DayType.HOLIDAY,
-                            onClick = { Store.overrideDayType(ctx, date, DayType.HOLIDAY); refresh() },
-                            label = { Text("土休日ダイヤ") },
-                        )
+                        if (weekday) {
+                            Row {
+                                FilterChip(
+                                    selected = !serviceDay,
+                                    onClick = { Store.setDayOff(ctx, date, serviceDay); refresh() },
+                                    label = { Text("今日は休み（祝日など）") },
+                                )
+                            }
+                        }
                     }
-                    Text("祝日は自動で切り替わらないので、手動で「土休日ダイヤ」を選んでください", fontSize = 12.sp)
                 }
             }
 
@@ -161,10 +172,10 @@ class MainActivity : ComponentActivity() {
                         if (sanyoMissing) "新開地発 北鈴蘭台行きの候補（山陽の時刻表は未入力）" else "帰り道の候補（普通優先）",
                         fontWeight = FontWeight.Bold,
                     )
-                    planner.lastDepartureRoute(dayType)?.let {
+                    planner.lastDepartureRoute()?.let {
                         Text("荒井発の最終：${it.sanyo!!.dep}発（北鈴蘭台 ${it.kitaArr}着）", fontSize = 13.sp)
                     }
-                    planner.lastRoute(dayType)?.let {
+                    planner.lastRoute()?.let {
                         Text("神戸電鉄の最終：新開地 ${it.shintetsu.dep}発 ${it.shintetsu.dest}行き（北鈴蘭台 ${it.kitaArr}着）", fontSize = 13.sp)
                     }
                 }

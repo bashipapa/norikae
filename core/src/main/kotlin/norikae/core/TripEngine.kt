@@ -34,7 +34,6 @@ enum class RingKind {
 @Serializable
 data class TripState(
     val serviceDate: String,
-    val dayType: DayType,
     val phase: Phase,
     val shinkaichiArr: Int?,
     val umedaRisk: Boolean,
@@ -107,10 +106,9 @@ class TripEngine(
     }
 
     /** 乗車開始 */
-    fun start(route: Route, dayType: DayType, serviceDate: String): Transition {
+    fun start(route: Route, serviceDate: String): Transition {
         val state = TripState(
             serviceDate = serviceDate,
-            dayType = dayType,
             phase = Phase.RIDING_SANYO,
             shinkaichiArr = route.shinkaichiArr?.minutes,
             umedaRisk = route.umedaRisk,
@@ -170,8 +168,7 @@ class TripEngine(
 
             Phase.OVERSHOT_SHINKAICHI -> {
                 // 乗り過ごした先で降りた。戻ってくる前提で、乗れそうな電車で北鈴蘭台アラームを仮に入れ直す
-                val dayType = state.dayType
-                val fallback = planner.connectAtShinkaichi(dayType, t + 10)
+                val fallback = planner.connectAtShinkaichi(t + 10)
                 val actions = mutableListOf<TripAction>(
                     TripAction.StopRinging,
                     TripAction.Cancel(SHINKAICHI_KINDS),
@@ -202,7 +199,7 @@ class TripEngine(
     private fun onInVehicle(state: TripState, t: ServiceTime): Transition {
         if (state.phase != Phase.TRANSFERRING) return Transition(state, emptyList())
         val next = state.copy(phase = Phase.RIDING_SHINTETSU)
-        val train = planner.shintetsuFromBoarding(state.dayType, t) ?: return Transition(next, emptyList())
+        val train = planner.shintetsuFromBoarding(t) ?: return Transition(next, emptyList())
         if (!train.reachesKitaSuzurandai) {
             return Transition(
                 next.copy(wrongLineWarned = true),
@@ -319,7 +316,7 @@ class TripEngine(
     }
 
     private fun returnGuidance(state: TripState, t: ServiceTime): String {
-        val back = planner.returnTrain(state.dayType, t + RETURN_MARGIN_MIN)
+        val back = planner.returnTrain(t + RETURN_MARGIN_MIN)
             ?: return "北鈴蘭台に戻る電車はもうありません。タクシーを検討してください"
         return "戻る電車の目安：北鈴蘭台 ${back.dep}着（新開地方面・${back.dest}行き）"
     }

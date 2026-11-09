@@ -7,5 +7,3 @@ local.properties
 captures/
 .kotlin/
 
-# 個人利用の時刻データ（転載禁止のため公開リポジトリに入れない）
-data/local/

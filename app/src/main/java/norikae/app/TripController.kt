@@ -40,15 +40,15 @@ object TripController {
         val (date, _) = now()
         // 前の乗車が残っていれば片付ける
         if (isActive(ctx)) end(ctx)
-        val transition = engine(ctx).start(route, Store.dayType(ctx, date), date.toString())
+        val transition = engine(ctx).start(route, date.toString())
         apply(ctx, transition)
         TripService.start(ctx)
     }
 
     /** 「今乗った」：実際の乗車時刻から経路を決めて開始 */
     fun startFromBoardingNow(ctx: Context): Boolean {
-        val (date, time) = now()
-        val route = planner(ctx).routeFromBoarding(Store.dayType(ctx, date), time) ?: return false
+        val (_, time) = now()
+        val route = planner(ctx).routeFromBoarding(time) ?: return false
         start(ctx, route)
         return true
     }
@@ -66,6 +66,8 @@ object TripController {
             handle(ctx, TripEvent.MotionChanged(motion, time))
             return
         }
+        // 平日専用：土日と「今日は休み」の日は自動開始しない
+        if (!Store.isServiceDay(ctx, date)) return
         // 受信時点では位置がないので、「荒井の範囲を出た時刻」（GeofenceReceiver が保存）で判定する
         val shouldStart = AutoStartRule().shouldStart(time, motion, nearArai = null, leftAraiAt = Store.leftAraiAt(ctx, date))
         if (!shouldStart) return
@@ -111,7 +113,7 @@ object TripController {
             return
         }
         val p = planner(ctx)
-        val train = p.shintetsuFromBoarding(state.dayType, ServiceTime(state.shintetsuDep))
+        val train = p.shintetsuFromBoarding(ServiceTime(state.shintetsuDep))
         if (train != null) {
             val shinkaichiArr = state.shinkaichiArr
             val alarms = if (state.phase == Phase.RIDING_SANYO && shinkaichiArr != null) {

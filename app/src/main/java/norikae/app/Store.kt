@@ -1,14 +1,13 @@
 package norikae.app
 
 import android.content.Context
-import norikae.core.DayType
 import norikae.core.LatLon
 import norikae.core.ServiceTime
 import norikae.core.StationId
 import norikae.core.StationLocations
 import norikae.core.Timetable
 import norikae.core.TripState
-import norikae.core.dayTypeOf
+import norikae.core.isWeekday
 import java.time.LocalDate
 
 /** 端末内の保存（SharedPreferences） */
@@ -16,7 +15,7 @@ object Store {
     private const val PREFS = "norikae"
     private const val KEY_TRIP = "trip_state"
     private const val KEY_RUN_MINUTES = "sanyo_run_minutes"
-    private const val KEY_DAY_OVERRIDE = "day_override"
+    private const val KEY_DAY_OFF = "day_off"
     private const val KEY_LEFT_ARAI = "left_arai_at"
     private const val KEY_LOCAL_TOLERANCE = "local_tolerance"
 
@@ -62,18 +61,19 @@ object Store {
     /** 普通優先の許容差（分） */
     fun localTolerance(ctx: Context): Int = prefs(ctx).getInt(KEY_LOCAL_TOLERANCE, 15)
 
-    /** ダイヤ種別の手動切り替え（祝日用）。"日付|WEEKDAY" の形で、その営業日だけ有効 */
-    fun dayType(ctx: Context, serviceDate: LocalDate): DayType {
-        val override = prefs(ctx).getString(KEY_DAY_OVERRIDE, null)?.split("|")
-        if (override != null && override.size == 2 && override[0] == serviceDate.toString()) {
-            return DayType.valueOf(override[1])
-        }
-        return dayTypeOf(serviceDate)
+    /** 「今日は休み」（祝日など）にした営業日。この日は自動開始しない */
+    fun isDayOff(ctx: Context, serviceDate: LocalDate): Boolean =
+        prefs(ctx).getString(KEY_DAY_OFF, null) == serviceDate.toString()
+
+    fun setDayOff(ctx: Context, serviceDate: LocalDate, off: Boolean) {
+        prefs(ctx).edit().apply {
+            if (off) putString(KEY_DAY_OFF, serviceDate.toString()) else remove(KEY_DAY_OFF)
+        }.apply()
     }
 
-    fun overrideDayType(ctx: Context, serviceDate: LocalDate, dayType: DayType) {
-        prefs(ctx).edit().putString(KEY_DAY_OVERRIDE, "$serviceDate|${dayType.name}").apply()
-    }
+    /** アプリが動く日か（平日で、「今日は休み」にしていない） */
+    fun isServiceDay(ctx: Context, serviceDate: LocalDate): Boolean =
+        isWeekday(serviceDate) && !isDayOff(ctx, serviceDate)
 
     // ---- 荒井を出た時刻（自動開始用） ----
 
@@ -93,13 +93,8 @@ object Store {
 
     /** assets/timetable.json を読み、設定の所要分で上書きしたもの */
     fun timetable(ctx: Context): Timetable {
-        val base = cachedTimetable ?: run {
-            val text = ctx.assets.open("timetable.json").bufferedReader().use { it.readText() }
-            // 山陽の時刻表（data/local/sanyo.json）。個人用のため git には入れていない。無ければ null
-            val sanyo = runCatching {
-                ctx.assets.open("local/sanyo.json").bufferedReader().use { it.readText() }
-            }.getOrNull()
-            Timetable.parse(text, sanyo)
+        val base = cachedTimetable ?: ctx.assets.open("timetable.json").bufferedReader().use {
+            Timetable.parse(it.readText())
         }.also { cachedTimetable = it }
         val runMinutes = sanyoRunMinutes(ctx) ?: return base
         return base.copy(sanyoDefaultRunMinutes = runMinutes)

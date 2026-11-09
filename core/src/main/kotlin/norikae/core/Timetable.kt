@@ -66,44 +66,20 @@ data class ShintetsuTrain(
 
 data class UpTrain(val dep: ServiceTime, val dest: String)
 
-data class DayTimetable(
+/** 平日の帰り道の時刻表（21時以降〜終電） */
+data class Timetable(
+    val transferMinutesAtShinkaichi: Int,
+    /** 山陽の時刻表が空のときに使う、荒井→新開地の所要分 */
+    val sanyoDefaultRunMinutes: Int?,
     val sanyo: List<SanyoTrain>,
     val shintetsu: List<ShintetsuTrain>,
     val kitaSuzurandaiUp: List<UpTrain>,
-)
-
-data class Timetable(
-    val transferMinutesAtShinkaichi: Int,
-    /** 山陽の時刻表が未入力のときに使う、荒井→新開地の所要分 */
-    val sanyoDefaultRunMinutes: Int?,
-    val weekday: DayTimetable,
-    val holiday: DayTimetable,
     val shintetsuRevision: String?,
 ) {
-    fun forDay(dayType: DayType): DayTimetable = when (dayType) {
-        DayType.WEEKDAY -> weekday
-        DayType.HOLIDAY -> holiday
-    }
-
     companion object {
         private val json = Json { ignoreUnknownKeys = true }
 
         fun parse(text: String): Timetable = json.decodeFromString<TimetableJson>(text).toModel()
-
-        /**
-         * 基本の時刻表に、ローカルファイル（data/local/sanyo.json）の山陽の時刻表を重ねる。
-         * ローカルファイルは個人利用の時刻データのため git には入れていない。
-         */
-        fun parse(text: String, sanyoOverlay: String?): Timetable {
-            val base = parse(text)
-            if (sanyoOverlay.isNullOrBlank()) return base
-            val overlay = json.decodeFromString<SanyoOverlayJson>(sanyoOverlay).sanyo
-            fun day(list: List<SanyoJson>) = list.map { it.toModel() }.sortedBy { it.dep }
-            return base.copy(
-                weekday = base.weekday.copy(sanyo = day(overlay.weekday)),
-                holiday = base.holiday.copy(sanyo = day(overlay.holiday)),
-            )
-        }
     }
 }
 
@@ -114,35 +90,26 @@ private data class TimetableJson(
     val meta: MetaJson? = null,
     val transferMinutesAtShinkaichi: Int = 3,
     val sanyoDefaultRunMinutes: Int? = null,
-    val sanyo: ByDay<SanyoJson> = ByDay(),
-    val shintetsu: ByDay<ShintetsuJson> = ByDay(),
-    val kitaSuzurandaiUp: ByDay<UpJson> = ByDay(),
+    val sanyo: WeekdayOnly<SanyoJson> = WeekdayOnly(),
+    val shintetsu: WeekdayOnly<ShintetsuJson> = WeekdayOnly(),
+    val kitaSuzurandaiUp: WeekdayOnly<UpJson> = WeekdayOnly(),
 ) {
-    fun toModel(): Timetable {
-        fun build(weekday: Boolean): DayTimetable = DayTimetable(
-            sanyo = (if (weekday) sanyo.weekday else sanyo.holiday).map { it.toModel() }.sortedBy { it.dep },
-            shintetsu = (if (weekday) shintetsu.weekday else shintetsu.holiday).map { it.toModel() }.sortedBy { it.dep },
-            kitaSuzurandaiUp = (if (weekday) kitaSuzurandaiUp.weekday else kitaSuzurandaiUp.holiday)
-                .map { UpTrain(ServiceTime.parse(it.dep), it.dest) }.sortedBy { it.dep },
-        )
-        return Timetable(
-            transferMinutesAtShinkaichi = transferMinutesAtShinkaichi,
-            sanyoDefaultRunMinutes = sanyoDefaultRunMinutes,
-            weekday = build(true),
-            holiday = build(false),
-            shintetsuRevision = meta?.shintetsuRevision,
-        )
-    }
+    fun toModel() = Timetable(
+        transferMinutesAtShinkaichi = transferMinutesAtShinkaichi,
+        sanyoDefaultRunMinutes = sanyoDefaultRunMinutes,
+        sanyo = sanyo.weekday.map { it.toModel() }.sortedBy { it.dep },
+        shintetsu = shintetsu.weekday.map { it.toModel() }.sortedBy { it.dep },
+        kitaSuzurandaiUp = kitaSuzurandaiUp.weekday.map { UpTrain(ServiceTime.parse(it.dep), it.dest) }.sortedBy { it.dep },
+        shintetsuRevision = meta?.shintetsuRevision,
+    )
 }
-
-@Serializable
-private data class SanyoOverlayJson(val sanyo: ByDay<SanyoJson> = ByDay())
 
 @Serializable
 private data class MetaJson(val shintetsuRevision: String? = null)
 
+/** JSON では "weekday" の下に並べる（平日専用） */
 @Serializable
-private data class ByDay<T>(val weekday: List<T> = emptyList(), val holiday: List<T> = emptyList())
+private data class WeekdayOnly<T>(val weekday: List<T> = emptyList())
 
 @Serializable
 private data class SanyoJson(

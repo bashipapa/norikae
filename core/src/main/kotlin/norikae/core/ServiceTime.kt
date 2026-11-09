@@ -48,19 +48,14 @@ fun LocalDateTime.toService(): Pair<LocalDate, ServiceTime> {
     }
 }
 
-enum class DayType { WEEKDAY, HOLIDAY }
-
 /**
- * ダイヤ種別を判定する。土日は休日ダイヤ。
- * 祝日は自動判定しないので、[extraHolidays] に入れるか、アプリ側で手動切り替えする。
+ * 平日（アプリが動く日）か。土日は動かない。
+ * 祝日は自動判定しないので、[holidays] に入れるか、アプリで「今日は休み」にする。
  */
-fun dayTypeOf(serviceDate: LocalDate, extraHolidays: Set<LocalDate> = emptySet()): DayType =
-    when {
-        serviceDate.dayOfWeek == DayOfWeek.SATURDAY -> DayType.HOLIDAY
-        serviceDate.dayOfWeek == DayOfWeek.SUNDAY -> DayType.HOLIDAY
-        serviceDate in extraHolidays -> DayType.HOLIDAY
-        else -> DayType.WEEKDAY
-    }
+fun isWeekday(serviceDate: LocalDate, holidays: Set<LocalDate> = emptySet()): Boolean =
+    serviceDate.dayOfWeek != DayOfWeek.SATURDAY &&
+        serviceDate.dayOfWeek != DayOfWeek.SUNDAY &&
+        serviceDate !in holidays
 
 /** 飲み会モードの判定: 21時以降（営業日基準で 21:00〜28:00 未満）に乗車したら ON */
 data class DrinkingModeRule(val startHour: Int = 21) {

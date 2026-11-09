@@ -23,12 +23,12 @@ class TripEngineTest {
 
     /** 新開地 22:20着 → 22:27 三田 → 北鈴蘭台 22:45着 */
     private fun route(umeda: Boolean = false): Route {
-        val train = tt.weekday.shintetsu.first { it.dep == t("22:27") }
+        val train = tt.shintetsu.first { it.dep == t("22:27") }
         val sanyo = SanyoTrain(t("21:30"), if (umeda) TrainType.DIRECT_LIMITED else TrainType.LOCAL, "x", t("22:20"), null)
         return Route(sanyo, t("22:20"), false, train, train.kitaSuzurandaiArr!!)
     }
 
-    private fun started(umeda: Boolean = false) = engine.start(route(umeda), DayType.WEEKDAY, "2026-11-09")
+    private fun started(umeda: Boolean = false) = engine.start(route(umeda), "2026-11-09")
 
     @Test
     fun startSchedulesBothStations() {

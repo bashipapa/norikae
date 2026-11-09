@@ -23,9 +23,9 @@ data class Route(
 class RoutePlanner(private val timetable: Timetable) {
 
     /** 新開地に [arrival] に着いたとき、乗れる北鈴蘭台行きの最初の電車 */
-    fun connectAtShinkaichi(dayType: DayType, arrival: ServiceTime): ShintetsuTrain? {
+    fun connectAtShinkaichi(arrival: ServiceTime): ShintetsuTrain? {
         val earliest = arrival + timetable.transferMinutesAtShinkaichi
-        return timetable.forDay(dayType).shintetsu
+        return timetable.shintetsu
             .firstOrNull { it.reachesKitaSuzurandai && it.dep >= earliest }
     }
 
@@ -33,8 +33,8 @@ class RoutePlanner(private val timetable: Timetable) {
      * [from] 以降に荒井を出る経路の一覧（荒井発の早い順）。
      * 山陽が未入力なら、新開地発の北鈴蘭台行きの一覧を返す（新開地着は推定できる場合だけ入れる）。
      */
-    fun plan(dayType: DayType, from: ServiceTime): List<Route> {
-        val day = timetable.forDay(dayType)
+    fun plan(from: ServiceTime): List<Route> {
+        val day = timetable
         if (day.sanyo.isEmpty()) {
             val run = timetable.sanyoDefaultRunMinutes
             val transfer = timetable.transferMinutesAtShinkaichi
@@ -55,7 +55,7 @@ class RoutePlanner(private val timetable: Timetable) {
         return day.sanyo
             .filter { it.dep >= from && it.shinkaichiArr != null }
             .mapNotNull { sanyo ->
-                val connection = connectAtShinkaichi(dayType, sanyo.shinkaichiArr!!) ?: return@mapNotNull null
+                val connection = connectAtShinkaichi(sanyo.shinkaichiArr!!) ?: return@mapNotNull null
                 Route(
                     sanyo = sanyo,
                     shinkaichiArr = sanyo.shinkaichiArr,
@@ -83,19 +83,19 @@ class RoutePlanner(private val timetable: Timetable) {
      * 実際に荒井で乗った時刻から経路を決める（遅れや、予定と違う電車に乗った場合に対応）。
      * 山陽の時刻表があれば「乗車時刻 +2分 までに出た最後の列車」に乗ったとみなす。
      */
-    fun routeFromBoarding(dayType: DayType, boardedAt: ServiceTime): Route? {
-        val day = timetable.forDay(dayType)
+    fun routeFromBoarding(boardedAt: ServiceTime): Route? {
+        val day = timetable
         if (day.sanyo.isEmpty()) {
             val run = timetable.sanyoDefaultRunMinutes ?: return null
             val arr = boardedAt + run
-            val train = connectAtShinkaichi(dayType, arr) ?: return null
+            val train = connectAtShinkaichi(arr) ?: return null
             return Route(null, arr, true, train, train.kitaSuzurandaiArr!!)
         }
         val sanyo = day.sanyo.lastOrNull { it.dep <= boardedAt + 2 && it.dep >= boardedAt - 15 }
             ?: day.sanyo.firstOrNull { it.dep >= boardedAt }
             ?: return null
         val arr = sanyo.shinkaichiArr ?: return null
-        val train = connectAtShinkaichi(dayType, arr) ?: return null
+        val train = connectAtShinkaichi(arr) ?: return null
         return Route(sanyo, arr, false, train, train.kitaSuzurandaiArr!!)
     }
 
@@ -103,19 +103,19 @@ class RoutePlanner(private val timetable: Timetable) {
      * 新開地で神戸電鉄に乗った時刻から、実際に乗った電車を推定する。
      * 発車時刻が [boardedAt] の 4分前〜1分後 の電車のうち、一番近いもの。
      */
-    fun shintetsuFromBoarding(dayType: DayType, boardedAt: ServiceTime): ShintetsuTrain? =
-        timetable.forDay(dayType).shintetsu
+    fun shintetsuFromBoarding(boardedAt: ServiceTime): ShintetsuTrain? =
+        timetable.shintetsu
             .filter { it.dep >= boardedAt - 4 && it.dep <= boardedAt + 1 }
             .minByOrNull { kotlin.math.abs(it.dep - boardedAt) }
 
     /** 北鈴蘭台に戻れる新開地方面の電車（乗り過ごし時の案内用）。[after] 以降で最初のもの */
-    fun returnTrain(dayType: DayType, after: ServiceTime): UpTrain? =
-        timetable.forDay(dayType).kitaSuzurandaiUp.firstOrNull { it.dep >= after }
+    fun returnTrain(after: ServiceTime): UpTrain? =
+        timetable.kitaSuzurandaiUp.firstOrNull { it.dep >= after }
 
     /** その日の終電で帰れる最後の経路（北鈴蘭台着が一番遅いもの） */
-    fun lastRoute(dayType: DayType): Route? = plan(dayType, ServiceTime(0)).maxByOrNull { it.kitaArr }
+    fun lastRoute(): Route? = plan(ServiceTime(0)).maxByOrNull { it.kitaArr }
 
     /** 荒井を一番遅く出て帰れる経路（山陽が未入力なら null） */
-    fun lastDepartureRoute(dayType: DayType): Route? =
-        plan(dayType, ServiceTime(0)).filter { it.sanyo != null }.maxByOrNull { it.sanyo!!.dep }
+    fun lastDepartureRoute(): Route? =
+        plan(ServiceTime(0)).filter { it.sanyo != null }.maxByOrNull { it.sanyo!!.dep }
 }

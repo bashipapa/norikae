@@ -41,12 +41,12 @@ class ServiceTimeTest {
     }
 
     @Test
-    fun weekendsUseHolidayTimetable() {
-        assertEquals(DayType.WEEKDAY, dayTypeOf(LocalDate.of(2026, 11, 9))) // 月
-        assertEquals(DayType.HOLIDAY, dayTypeOf(LocalDate.of(2026, 11, 8))) // 日
-        assertEquals(DayType.HOLIDAY, dayTypeOf(LocalDate.of(2026, 11, 7))) // 土
+    fun weekdaysOnly() {
+        assertTrue(isWeekday(LocalDate.of(2026, 11, 9)))  // 月
+        assertFalse(isWeekday(LocalDate.of(2026, 11, 8))) // 日
+        assertFalse(isWeekday(LocalDate.of(2026, 11, 7))) // 土
         val holiday = LocalDate.of(2026, 11, 23)
-        assertEquals(DayType.HOLIDAY, dayTypeOf(holiday, setOf(holiday)))
+        assertFalse(isWeekday(holiday, setOf(holiday)))
     }
 }
 
@@ -55,7 +55,7 @@ class TimetableTest {
 
     @Test
     fun loadsShintetsuFromJson() {
-        val weekday = tt.weekday.shintetsu
+        val weekday = tt.shintetsu
         assertEquals("21:11", weekday.first().dep.toString())
         assertEquals("24:03", weekday.last().dep.toString())
         assertNull(weekday.last().kitaSuzurandaiArr, "24:03 は鈴蘭台止まり")
@@ -64,7 +64,7 @@ class TimetableTest {
 
     @Test
     fun awaLineTrainsDoNotReachKitaSuzurandai() {
-        val shimizu = tt.weekday.shintetsu.first { it.dep == t("21:17") }
+        val shimizu = tt.shintetsu.first { it.dep == t("21:17") }
         assertEquals("志染", shimizu.dest)
         assertFalse(shimizu.reachesKitaSuzurandai)
     }
@@ -72,16 +72,10 @@ class TimetableTest {
     @Test
     fun lastTrainIsDojoMinamiguchi() {
         val planner = RoutePlanner(tt)
-        val last = assertNotNull(planner.lastRoute(DayType.WEEKDAY))
+        val last = assertNotNull(planner.lastRoute())
         assertEquals("23:50", last.shintetsu.dep.toString())
         assertEquals("道場南口", last.shintetsu.dest)
         assertEquals("24:08", last.kitaArr.toString())
     }
 
-    @Test
-    fun holidayHasSemiExpressAt2228() {
-        val train = tt.holiday.shintetsu.first { it.dep == t("22:28") }
-        assertEquals(TrainType.SEMI_EXPRESS, train.type)
-        assertEquals("22:45", train.kitaSuzurandaiArr.toString())
-    }
 }
