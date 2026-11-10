@@ -47,7 +47,11 @@ class RingingActivity : ComponentActivity() {
                         Text(title, fontSize = 34.sp, fontWeight = FontWeight.Bold)
                         Text(message, fontSize = 22.sp)
                         Button(
-                            onClick = { Ringer.stop(this@RingingActivity); finish() },
+                            onClick = {
+                                TripLog.add(this@RingingActivity, TripLog.Category.USER, "鳴動画面の「起きた（止める）」を押した")
+                                Ringer.stop(this@RingingActivity)
+                                finish()
+                            },
                             modifier = Modifier.fillMaxWidth().height(96.dp),
                         ) { Text("起きた（止める）", fontSize = 24.sp) }
                         OutlinedButton(

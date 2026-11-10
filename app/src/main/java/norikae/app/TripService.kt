@@ -48,6 +48,7 @@ class TripService : Service() {
         }
         if (started.isFailure) {
             // 位置の権限が「使用中のみ」でバックグラウンドから起動した場合など。アラームは時刻どおり鳴る
+            TripLog.add(this, TripLog.Category.SYSTEM, "位置の取得を開始できなかった：${started.exceptionOrNull()?.javaClass?.simpleName}")
             stopSelf()
             return START_NOT_STICKY
         }
@@ -57,6 +58,7 @@ class TripService : Service() {
                 .build()
             fused.removeLocationUpdates(callback)
             fused.requestLocationUpdates(request, callback, Looper.getMainLooper())
+            TripLog.add(this, TripLog.Category.SYSTEM, "乗車中の位置の取得を開始")
         }
         return START_STICKY
     }
@@ -76,6 +78,7 @@ class TripService : Service() {
             if (!Sensing.has(ctx, Manifest.permission.ACCESS_FINE_LOCATION)) return
             if (!fromForeground && !Sensing.has(ctx, Manifest.permission.ACCESS_BACKGROUND_LOCATION)) {
                 Notifier.info(ctx, "位置が「使用中のみ許可」のため、位置を使った乗り過ごし判定はお休みします（アラームは時刻どおり鳴ります）")
+                TripLog.add(ctx, TripLog.Category.SYSTEM, "位置の取得はしない（裏から開始・位置が「使用中のみ許可」）")
                 return
             }
             runCatching { ContextCompat.startForegroundService(ctx, Intent(ctx, TripService::class.java)) }

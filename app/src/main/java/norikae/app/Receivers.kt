@@ -23,8 +23,16 @@ class AlarmReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
-            ACTION_STOP_RINGING -> { Ringer.stop(context); return }
-            ACTION_TEST -> { Ringer.ring(context, RingKind.WAKE, "アラームのテストです。「起きた（止める）」で止まります"); return }
+            ACTION_STOP_RINGING -> {
+                TripLog.add(context, TripLog.Category.USER, "通知の「止める」を押した")
+                Ringer.stop(context)
+                return
+            }
+            ACTION_TEST -> {
+                TripLog.add(context, TripLog.Category.RING, "アラームのテスト（1分後）を鳴らした")
+                Ringer.ring(context, RingKind.WAKE, "アラームのテストです。「起きた（止める）」で止まります")
+                return
+            }
         }
         val kind = intent.getStringExtra(AlarmScheduler.EXTRA_KIND)?.let { AlarmKind.valueOf(it) } ?: return
         val (_, time) = TripController.now()
@@ -62,12 +70,14 @@ class GeofenceReceiver : BroadcastReceiver() {
             ?: return
         val (date, time) = TripController.now()
         Store.saveLeftOrigin(context, date, origin, time)
+        TripLog.add(context, TripLog.Category.PLACE, "${origin.label}駅の範囲（半径300m）を出た")
     }
 }
 
 /** 再起動・アプリ更新のあとに、判定の登録とアラームを戻す */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        TripLog.add(context, TripLog.Category.SYSTEM, if (intent.action == Intent.ACTION_BOOT_COMPLETED) "スマホを再起動した" else "アプリを更新した")
         Sensing.registerAll(context)
         TripController.restore(context)
     }

@@ -68,11 +68,13 @@ object TimetableUpdater {
 class TimetableUpdateWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
     override suspend fun doWork(): Result = try {
         val changed = TimetableUpdater.download(applicationContext)
+        TripLog.add(applicationContext, TripLog.Category.TIMETABLE, if (changed) "時刻表を更新した（${Store.timetable(applicationContext).retrievedAt} 取得分）" else "時刻表を確認した（変更なし）")
         if (changed) {
             Notifier.info(applicationContext, "時刻表を更新しました（${Store.timetable(applicationContext).retrievedAt ?: ""} 取得分）")
         }
         Result.success()
     } catch (e: Exception) {
+        TripLog.add(applicationContext, TripLog.Category.TIMETABLE, "時刻表の確認に失敗：${e.message}")
         if (runAttemptCount < 3) Result.retry() else Result.failure()
     }
 }

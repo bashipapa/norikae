@@ -30,7 +30,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -101,11 +103,11 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme {
                 Surface(Modifier.fillMaxSize()) {
-                    var showSettings by rememberSaveable { mutableStateOf(false) }
-                    if (showSettings) {
-                        SettingsScreen(onBack = { showSettings = false })
-                    } else {
-                        MainScreen(onOpenSettings = { showSettings = true })
+                    var screen by rememberSaveable { mutableStateOf("main") }
+                    when (screen) {
+                        "settings" -> SettingsScreen(onBack = { screen = "main" }, onOpenLog = { screen = "log" })
+                        "log" -> LogScreen(onBack = { screen = "settings" })
+                        else -> MainScreen(onOpenSettings = { screen = "settings" })
                     }
                 }
             }
@@ -290,7 +292,7 @@ class MainActivity : ComponentActivity() {
     /** 設定画面（右上の歯車から開く） */
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
-    private fun SettingsScreen(onBack: () -> Unit) {
+    private fun SettingsScreen(onBack: () -> Unit, onOpenLog: () -> Unit) {
         BackHandler(onBack = onBack)
         var tick by remember { mutableIntStateOf(0) }
         val refresh: () -> Unit = { tick++ }
@@ -338,6 +340,21 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+                // 乗車ログ
+                item {
+                    Card {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("乗車ログ", fontWeight = FontWeight.Bold)
+                            val latest = remember(tick) { TripLog.read(ctx).firstOrNull() }
+                            Text(
+                                "いつ開始し、何時に何が鳴り、乗り物/歩行をいつ検知したかの記録です" +
+                                    (latest?.let { "（最新：${it.time}）" } ?: "（まだ記録はありません）"),
+                                fontSize = 12.sp,
+                            )
+                            Button(onClick = onOpenLog) { Text("乗車ログを見る") }
+                        }
+                    }
+                }
                 item { PermissionCard(showOptional = true) }
                 // 時刻表の自動更新
                 item {
@@ -380,6 +397,90 @@ class MainActivity : ComponentActivity() {
                 }
                 item { AlarmTestCard() }
                 item { SettingsCard(onChanged = refresh) }
+                item { Spacer(Modifier.padding(bottom = 24.dp)) }
+            }
+        }
+    }
+
+    /** 乗車ログ画面（設定 → 乗車ログを見る） */
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Composable
+    private fun LogScreen(onBack: () -> Unit) {
+        BackHandler(onBack = onBack)
+        val ctx = this
+        var tick by remember { mutableIntStateOf(0) }
+        val entries = remember(tick) { TripLog.read(ctx) }
+        var confirmClear by remember { mutableStateOf(false) }
+        if (confirmClear) {
+            AlertDialog(
+                onDismissRequest = { confirmClear = false },
+                title = { Text("乗車ログを消しますか？") },
+                text = { Text("すべての記録を消します。元に戻せません") },
+                confirmButton = {
+                    TextButton(onClick = { TripLog.clear(ctx); confirmClear = false; tick++ }) { Text("消す") }
+                },
+                dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("やめる") } },
+            )
+        }
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("乗車ログ", fontWeight = FontWeight.Bold) },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る") }
+                    },
+                    actions = {
+                        IconButton(onClick = {
+                            val send = Intent(Intent.ACTION_SEND)
+                                .setType("text/plain")
+                                .putExtra(Intent.EXTRA_SUBJECT, "のりかえアラーム 乗車ログ")
+                                .putExtra(Intent.EXTRA_TEXT, TripLog.shareText(ctx, days = 7))
+                            startActivity(Intent.createChooser(send, "乗車ログを送る（直近7日）"))
+                        }) { Icon(Icons.Filled.Share, contentDescription = "共有") }
+                        IconButton(onClick = { confirmClear = true }) { Icon(Icons.Filled.Delete, contentDescription = "消す") }
+                    },
+                )
+            },
+        ) { padding ->
+            LazyColumn(
+                Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                if (entries.isEmpty()) {
+                    item { Text("まだ記録はありません。次に乗ったときから記録されます", modifier = Modifier.padding(top = 16.dp)) }
+                }
+                item {
+                    Text(
+                        "新しい順。右上の共有ボタンで直近7日分をテキストで送れます",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                entries.forEachIndexed { i, e ->
+                    if (i == 0 || entries[i - 1].date != e.date) {
+                        item(key = "h$i") {
+                            Text(e.date, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp, bottom = 2.dp))
+                        }
+                    }
+                    item(key = "e$i") {
+                        Row(Modifier.fillMaxWidth()) {
+                            Text(e.clock, fontSize = 12.sp, modifier = Modifier.width(62.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                e.category,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.width(64.dp),
+                                color = when (e.category) {
+                                    TripLog.Category.RING.label -> RED
+                                    TripLog.Category.AUTO.label -> AMBER
+                                    TripLog.Category.START.label, TripLog.Category.STATE.label -> MaterialTheme.colorScheme.primary
+                                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                            )
+                            Text(e.message, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                        }
+                    }
+                }
                 item { Spacer(Modifier.padding(bottom = 24.dp)) }
             }
         }
@@ -527,10 +628,12 @@ class MainActivity : ComponentActivity() {
                 Text("本番と同じ鳴らし方（アラーム音・バイブ・ロック画面に全画面表示）で鳴らします。音量は「アラーム音量」に従います", fontSize = 12.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = {
+                        TripLog.add(ctx, TripLog.Category.RING, "アラームのテスト（今すぐ）を鳴らした")
                         Ringer.ring(ctx, RingKind.WAKE, "アラームのテストです。「起きた（止める）」で止まります")
                     }) { Text("今すぐ鳴らす") }
                     Button(onClick = {
                         AlarmScheduler.scheduleTest(ctx, 60)
+                        TripLog.add(ctx, TripLog.Category.USER, "アラームのテスト（1分後）を予約した")
                         toast("1分後に鳴ります。画面を消して待ってください")
                     }) { Text("1分後に鳴らす") }
                 }
