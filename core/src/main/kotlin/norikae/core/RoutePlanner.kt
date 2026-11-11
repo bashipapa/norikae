@@ -20,8 +20,12 @@ data class Route(
     /** 電車を降りる駅 */
     val alightStation: String get() = if (taxiFromSuzurandai) "鈴蘭台" else "北鈴蘭台"
 
-    /** 乗り過ごすと梅田まで行ってしまう経路か（新開地アラームを強める） */
-    val umedaRisk: Boolean get() = sanyo?.goesToUmeda ?: false
+    /**
+     * 乗り過ごすと梅田まで行ってしまう経路か（新開地アラームを強め、一覧に警告を出す）。
+     * 21時より前に出る電車は飲み会の帰りではないので警告しない。
+     */
+    val umedaRisk: Boolean
+        get() = sanyo?.let { it.goesToUmeda && it.dep >= ServiceTime(UMEDA_WARNING_FROM_HOUR * 60) } ?: false
 
     /** 普通だけで帰れる経路か（山陽が未入力のときは普通扱い） */
     val sanyoIsLocal: Boolean get() = sanyo?.isLocalOnly ?: true
@@ -37,6 +41,9 @@ data class Route(
     companion object {
         /** この分数以下の乗り換えは「走れば乗れる」として目立たせる */
         const val TIGHT_TRANSFER_MINUTES = 2
+
+        /** 乗り過ごし警告（梅田まで行く）を出すのは、この時刻以降に出る電車だけ */
+        const val UMEDA_WARNING_FROM_HOUR = 21
     }
 }
 

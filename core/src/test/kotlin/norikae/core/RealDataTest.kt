@@ -189,7 +189,8 @@ class AraiEveningTest {
         assertEquals("20:24", last.sanyo!!.dep.toString())
         assertEquals("21:11", last.shintetsu.dep.toString())
         assertEquals("21:29", last.kitaArr.toString())
-        assertTrue(last.umedaRisk)
+        // 21時より前に出る電車は乗り過ごし警告を出さない
+        assertFalse(last.umedaRisk)
     }
 
     @Test
@@ -258,5 +259,29 @@ class RecommendTieBreakTest {
         val r = planner.recommend(routes)!!
         assertEquals("17:14", r.sanyo!!.dep.toString())
         assertEquals("18:22", r.kitaArr.toString())
+    }
+}
+
+class NoOvershootWarningBefore21Test {
+    private val planner = RoutePlanner(loadRealTimetable())
+
+    @Test
+    fun eveningLimitedHasNoWarningAndNormalPreAlarm() {
+        // 17:14 直通特急（大阪梅田行き）：21時より前なので警告なし、新開地の予告は通常の5分前
+        val r = planner.plan(t("17:00"), Origin.ARAI) { it.type.isLimited }.first { it.sanyo!!.dep == t("17:14") }
+        assertTrue(r.sanyo!!.goesToUmeda)
+        assertFalse(r.umedaRisk)
+        val pre = AlarmPlanner.plan(r).first { it.kind == AlarmKind.SHINKAICHI_PRE }
+        assertEquals(r.shinkaichiArr!! - 5, pre.at)
+        assertFalse(pre.message.contains("梅田"))
+    }
+
+    @Test
+    fun after21StillWarns() {
+        // 明石 21:13 直通特急は21時以降なので警告あり、予告は8分前
+        val r = planner.plan(t("21:00"), Origin.AKASHI) { it.type.isLimited }.first()
+        assertTrue(r.umedaRisk)
+        val pre = AlarmPlanner.plan(r).first { it.kind == AlarmKind.SHINKAICHI_PRE }
+        assertEquals(r.shinkaichiArr!! - 8, pre.at)
     }
 }
