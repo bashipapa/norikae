@@ -23,9 +23,11 @@ class RoutePlannerTest {
 
     @Test
     fun connectsWithTransferMargin() {
-        // 22:10 着 + 乗り換え3分 → 22:12 は間に合わない → 22:27
+        // 22:10 着 + 乗り換え1分（走れば乗れる）→ 22:12 に間に合う
         val train = assertNotNull(planner.connectAtShinkaichi(t("22:10")))
-        assertEquals("22:27", train.dep.toString())
+        assertEquals("22:12", train.dep.toString())
+        // 22:12 着 → 22:12 は無理 → 22:27
+        assertEquals("22:27", planner.connectAtShinkaichi(t("22:12"))!!.dep.toString())
     }
 
     @Test

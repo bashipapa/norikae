@@ -27,7 +27,22 @@ data class Route(
     val sanyoIsLocal: Boolean get() = sanyo?.isLocalOnly ?: true
 
     val waitAtShinkaichi: Int? get() = shinkaichiArr?.let { shintetsu.dep - it }
+
+    /** 新開地の乗り換えが2分以内（走れば乗れる） */
+    val tightTransfer: Boolean get() = waitAtShinkaichi?.let { it <= TIGHT_TRANSFER_MINUTES } ?: false
+
+    /** 合計の所要時間（乗る駅を出てから、最後に電車を降りるまで）。山陽が未入力なら null */
+    val totalMinutes: Int? get() = sanyo?.let { kitaArr - it.dep }
+
+    companion object {
+        /** この分数以下の乗り換えは「走れば乗れる」として目立たせる */
+        const val TIGHT_TRANSFER_MINUTES = 2
+    }
 }
+
+/** 所要時間を「1時間12分」「44分」の形に */
+fun formatMinutes(minutes: Int): String =
+    if (minutes >= 60) "${minutes / 60}時間${minutes % 60}分" else "${minutes}分"
 
 class RoutePlanner(private val timetable: Timetable) {
 
@@ -94,10 +109,12 @@ class RoutePlanner(private val timetable: Timetable) {
     fun recommend(routes: List<Route>, toleranceMinutes: Int = 15): Route? {
         val byTrain = routes.filterNot { it.taxiFromSuzurandai }
         if (byTrain.isEmpty()) return routes.firstOrNull()
-        val fastest = byTrain.minBy { it.kitaArr }
+        // 着く時刻が同じなら、遅く出る（合計の所要時間が短い）方を選ぶ
+        val order = compareBy<Route>({ it.kitaArr }, { it.totalMinutes ?: Int.MAX_VALUE })
+        val fastest = byTrain.minWith(order)
         val local = byTrain
             .filter { it.sanyoIsLocal && it.kitaArr - fastest.kitaArr <= toleranceMinutes }
-            .minByOrNull { it.kitaArr }
+            .minWithOrNull(order)
         return local ?: fastest
     }
 
@@ -135,6 +152,10 @@ class RoutePlanner(private val timetable: Timetable) {
     /** 北鈴蘭台に戻れる新開地方面の電車（乗り過ごし時の案内用）。[after] 以降で最初のもの */
     fun returnTrain(after: ServiceTime): UpTrain? =
         timetable.kitaSuzurandaiUp.firstOrNull { it.dep >= after }
+
+    /** 一覧の中で合計の所要時間が一番短い経路（タクシー経路は除く） */
+    fun shortest(routes: List<Route>): Route? =
+        routes.filter { !it.taxiFromSuzurandai && it.totalMinutes != null }.minByOrNull { it.totalMinutes!! }
 
     /** その日、北鈴蘭台まで電車で帰れる最後の経路 */
     fun lastRoute(origin: Origin = Origin.ARAI): Route? =

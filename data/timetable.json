@@ -15,7 +15,7 @@
     "shintetsuRetrievedAt": "2026-11-11",
     "autoUpdate": "tools/update_timetable.py が週1回 Yahoo!路線情報から更新（.github/workflows/update-timetable.yml）"
   },
-  "transferMinutesAtShinkaichi": 3,
+  "transferMinutesAtShinkaichi": 1,
   "sanyoDefaultRunMinutes": null,
   "stations": {
     "ARAI": {"name": "荒井", "lat": 34.757765, "lon": 134.793723},

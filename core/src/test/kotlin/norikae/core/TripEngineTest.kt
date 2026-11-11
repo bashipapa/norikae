@@ -74,7 +74,7 @@ class TripEngineTest {
         tr = engine.reduce(s, TripEvent.MotionChanged(Motion.WALKING, t("22:30")))
         assertEquals(Phase.TRANSFERRING, tr.state.phase)
         val kitaAlarms = tr.actions.filterIsInstance<TripAction.Schedule>().single().alarms
-        assertEquals("22:57", ServiceTime(tr.state.shintetsuDep).toString()) // 22:30+10分=22:40着 → 22:42は間に合わず22:57
+        assertEquals("22:42", ServiceTime(tr.state.shintetsuDep).toString()) // 22:30+10分=22:40着 → 乗り換え1分で22:42
         assertEquals(3, kitaAlarms.size)
     }
 

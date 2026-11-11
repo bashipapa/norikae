@@ -208,3 +208,55 @@ class AraiEveningTest {
         assertEquals("19:10", r.shinkaichiArr.toString())
     }
 }
+
+/** 合計の所要時間と、走れば乗れる乗り換え */
+class TotalTimeAndTransferTest {
+    private val tt = loadRealTimetable()
+    private val planner = RoutePlanner(tt)
+
+    @Test
+    fun transferIsOneMinute() {
+        assertEquals(1, tt.transferMinutesAtShinkaichi)
+    }
+
+    @Test
+    fun totalMinutesAndShortest() {
+        val routes = planner.plan(t("21:00"))
+        val r2115 = routes.first { it.sanyo!!.dep == t("21:15") }
+        // 21:15 → 北鈴蘭台 22:45着 = 90分
+        assertEquals(90, r2115.totalMinutes)
+        assertEquals("1時間30分", formatMinutes(90))
+        assertEquals("44分", formatMinutes(44))
+        // 一番短いのはタクシーを除いた中で所要時間が最小のもの
+        val shortest = planner.shortest(routes)!!
+        assertEquals(routes.filter { !it.taxiFromSuzurandai }.minOf { it.totalMinutes!! }, shortest.totalMinutes)
+    }
+
+    @Test
+    fun tightTransferIsFlagged() {
+        // 22:33 発は新開地 23:24着 → 23:30発（6分）なので走らなくてよい
+        val r2233 = planner.plan(t("22:30")).first { it.sanyo!!.dep == t("22:33") }
+        assertEquals(6, r2233.waitAtShinkaichi)
+        assertTrue(!r2233.tightTransfer)
+        // 2分以内の乗り換えは「走る」扱いで、新開地の本アラームでも知らせる
+        val tight = planner.plan(t("16:00")).firstOrNull { it.tightTransfer }
+        if (tight != null) {
+            assertTrue(tight.waitAtShinkaichi!! in 1..2)
+            val main = AlarmPlanner.plan(tight).first { it.kind == AlarmKind.SHINKAICHI_MAIN }
+            assertTrue(main.message.contains("走って"), main.message)
+        }
+    }
+}
+
+class RecommendTieBreakTest {
+    private val planner = RoutePlanner(loadRealTimetable())
+
+    @Test
+    fun sameArrivalPrefersLaterDeparture() {
+        // 17:04 S特急 と 17:14 直通特急 はどちらも北鈴蘭台 18:22着 → 遅く出る 17:14（所要が短い）を選ぶ
+        val routes = planner.plan(t("17:00"), Origin.ARAI) { it.type.isLimited }
+        val r = planner.recommend(routes)!!
+        assertEquals("17:14", r.sanyo!!.dep.toString())
+        assertEquals("18:22", r.kitaArr.toString())
+    }
+}

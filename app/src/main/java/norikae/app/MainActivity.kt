@@ -19,6 +19,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -81,6 +83,7 @@ import norikae.core.ServiceTime
 import norikae.core.StationId
 import norikae.core.TrainType
 import norikae.core.TripEvent
+import norikae.core.formatMinutes
 import norikae.core.isWeekday
 
 class MainActivity : ComponentActivity() {
@@ -132,6 +135,7 @@ class MainActivity : ComponentActivity() {
         val tab = StartTab.entries[tabIndex]
         val routes = planner.plan(now, tab.origin, tab.filter)
         val recommended = planner.recommend(routes, Store.localTolerance(ctx))
+        val shortestRoute = planner.shortest(routes)
         val trip = Store.trip(ctx)
         val sanyoMissing = timetable.sanyoFrom(tab.origin).isEmpty()
         var confirmRoute by remember { mutableStateOf<Route?>(null) }
@@ -146,6 +150,8 @@ class MainActivity : ComponentActivity() {
                             (r.sanyo?.transferAt?.let { "${shortName(it)}で乗換 → " } ?: "") +
                             (r.shinkaichiArr?.let { "新開地 ${it}着 → " } ?: "") +
                             "神鉄 ${r.shintetsu.dep}発 → ${r.alightStation} ${r.kitaArr}着" +
+                            (r.totalMinutes?.let { "\n\n所要 ${formatMinutes(it)}" } ?: "") +
+                            (r.waitAtShinkaichi?.let { "（新開地の乗り換え ${it}分${if (r.tightTransfer) "・走ってください" else ""}）" } ?: "") +
                             if (r.taxiFromSuzurandai) "\n\n終電後のため鈴蘭台止まりです。鈴蘭台からタクシーで帰ります" else "",
                     )
                 },
@@ -281,7 +287,7 @@ class MainActivity : ComponentActivity() {
             }
             if (routes.isNotEmpty()) item { RouteHeader(tab.origin) }
             items(routes) { route ->
-                RouteCard(route, recommended = route == recommended) { confirmRoute = route }
+                RouteCard(route, recommended = route == recommended, shortest = route == shortestRoute) { confirmRoute = route }
             }
 
             item { Spacer(Modifier.padding(bottom = 24.dp)) }
@@ -499,9 +505,12 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    @OptIn(ExperimentalLayoutApi::class)
     @Composable
-    private fun RouteCard(route: Route, recommended: Boolean, onClick: () -> Unit) {
+    private fun RouteCard(route: Route, recommended: Boolean, shortest: Boolean, onClick: () -> Unit) {
         val s = route.sanyo
+        val wait = route.waitAtShinkaichi
+        val total = route.totalMinutes
         Card(
             colors = if (recommended) {
                 CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
@@ -511,13 +520,15 @@ class MainActivity : ComponentActivity() {
         ) {
             Column(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(12.dp)) {
                 val badges = buildList {
+                    if (shortest && total != null) add("所要時間が最短（${formatMinutes(total)}）" to GREEN)
                     if (recommended) add("おすすめ" to MaterialTheme.colorScheme.primary)
+                    if (route.tightTransfer) add("新開地は走れば乗換${wait}分" to AMBER)
                     if (route.umedaRisk) add("乗り過ごすと${shortName(s?.arrivingDest ?: "梅田")}まで行きます" to RED)
                     if (route.shintetsu.transferAtSuzurandai) add("鈴蘭台で三田行きに乗換" to MaterialTheme.colorScheme.onSurfaceVariant)
                     if (route.taxiFromSuzurandai) add("終電後：鈴蘭台止まり → タクシー" to AMBER)
                 }
                 if (badges.isNotEmpty()) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 6.dp)) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 6.dp)) {
                         badges.forEach { (t, c) -> Text(t, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = c) }
                     }
                 }
@@ -554,6 +565,9 @@ class MainActivity : ComponentActivity() {
                         sub1 = "神鉄${route.shintetsu.dep}発",
                         sub2 = shortName(route.shintetsu.dest) + "行",
                         mainRed = s?.arrivingType?.isLimited == true,
+                        extra = wait?.let { if (route.tightTransfer) "乗換${it}分!" else "乗換${it}分" },
+                        extraColor = if (route.tightTransfer) AMBER else null,
+                        extraBold = route.tightTransfer,
                     )
                     Arrow()
                     // 北鈴蘭台着（鈴蘭台止まりなら鈴蘭台着 → タクシー）
@@ -565,6 +579,7 @@ class MainActivity : ComponentActivity() {
                             sub2 = "→タクシー",
                             mainAmber = true,
                             subAmber = true,
+                            extra = total?.let { "所要${it}分" },
                         )
                     } else {
                         TimeCell(
@@ -572,6 +587,9 @@ class MainActivity : ComponentActivity() {
                             main = route.kitaArr.toString(),
                             sub1 = if (route.shinkaichiEstimated && route.shinkaichiArr != null) "新開地着は推定" else null,
                             sub2 = null,
+                            extra = total?.let { if (shortest) "最短 ${it}分" else "所要${it}分" },
+                            extraColor = if (shortest) GREEN else null,
+                            extraBold = shortest,
                         )
                     }
                 }
@@ -590,6 +608,9 @@ class MainActivity : ComponentActivity() {
         mainSmall: Boolean = false,
         mainAmber: Boolean = false,
         subAmber: Boolean = false,
+        extra: String? = null,
+        extraColor: Color? = null,
+        extraBold: Boolean = false,
     ) {
         val muted = MaterialTheme.colorScheme.onSurfaceVariant
         val mainColor = when { mainRed -> RED; mainAmber -> AMBER; else -> Color.Unspecified }
@@ -605,6 +626,16 @@ class MainActivity : ComponentActivity() {
             )
             sub1?.let { Text(it, fontSize = 11.sp, color = subColor, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             sub2?.let { Text(it, fontSize = 11.sp, color = subColor, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            extra?.let {
+                Text(
+                    it,
+                    fontSize = 11.sp,
+                    color = extraColor ?: muted,
+                    fontWeight = if (extraBold) FontWeight.Bold else FontWeight.Normal,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 
@@ -793,4 +824,5 @@ private fun shortName(name: String) = name.replace(Regex("[(（].*?[)）]"), "")
 
 private val RED = Color(0xFFC00000)
 private val AMBER = Color(0xFFB36B00)
+private val GREEN = Color(0xFF00703C)
 private val ARROW_W = 16.dp

@@ -45,7 +45,8 @@ object AlarmPlanner {
             val pre = if (route.umedaRisk) settings.shinkaichiPreMinutesUmedaRisk else settings.shinkaichiPreMinutes
             val warn = if (route.umedaRisk) "（乗り過ごすと梅田まで行きます）" else ""
             alarms += PlannedAlarm(AlarmKind.SHINKAICHI_PRE, arr - pre, "まもなく新開地。起きてください$warn")
-            alarms += PlannedAlarm(AlarmKind.SHINKAICHI_MAIN, arr - settings.mainMinutes, "次は新開地。降りて神戸電鉄 ${route.shintetsu.dep} ${route.shintetsu.dest}行きに乗り換え")
+            val hurry = if (route.tightTransfer) "乗り換え${route.waitAtShinkaichi}分、走って！" else ""
+            alarms += PlannedAlarm(AlarmKind.SHINKAICHI_MAIN, arr - settings.mainMinutes, "次は新開地。${hurry}降りて神戸電鉄 ${route.shintetsu.dep} ${route.shintetsu.dest}行きに乗り換え")
             alarms += PlannedAlarm(AlarmKind.SHINKAICHI_CHECK, arr + settings.checkAfterMinutes, "")
         }
         alarms += kitaAlarms(route.shintetsu, settings)

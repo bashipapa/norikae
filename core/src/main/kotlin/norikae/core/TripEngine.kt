@@ -283,7 +283,11 @@ class TripEngine(
         val message = when (kind) {
             AlarmKind.SHINKAICHI_PRE ->
                 "まもなく新開地。起きてください" + if (state.umedaRisk) "（乗り過ごすと梅田まで行きます）" else ""
-            AlarmKind.SHINKAICHI_MAIN -> "次は新開地。降りて神戸電鉄 ${ServiceTime(state.shintetsuDep)} ${state.shintetsuDest}行きへ"
+            AlarmKind.SHINKAICHI_MAIN -> {
+                val wait = state.shinkaichiArr?.let { state.shintetsuDep - it }
+                val hurry = if (wait != null && wait <= Route.TIGHT_TRANSFER_MINUTES) "乗り換え${wait}分、走って！" else ""
+                "次は新開地。${hurry}降りて神戸電鉄 ${ServiceTime(state.shintetsuDep)} ${state.shintetsuDest}行きへ"
+            }
             AlarmKind.KITA_PRE -> when {
                 state.taxi -> "まもなく終点の鈴蘭台。起きてください（鈴蘭台からタクシー）"
                 state.transferAtSuzurandai -> "鈴蘭台で三田行きに乗り換え。まもなく北鈴蘭台。起きてください"
