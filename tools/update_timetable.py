@@ -2,11 +2,11 @@
 """
 平日の帰宅用時刻表（data/timetable.json）を Yahoo!路線情報から作り直す。
 
-- 山陽 荒井発・山陽明石発（大阪梅田・新開地方面）21時以降：各列車の停車駅一覧から新開地着を出す。
+- 山陽 荒井発（16時以降）・山陽明石発（21時以降）（大阪梅田・新開地方面）：各列車の停車駅一覧から新開地着を出す。
   新開地まで行かない列車は、終点で乗り換える次の電車を調べて「乗り換え後の新開地着」を入れる
-- 神戸電鉄 新開地発（三田・粟生方面）21時以降：北鈴蘭台着・鈴蘭台止まりの鈴蘭台着。
+- 神戸電鉄 新開地発（三田・粟生方面）16時以降：北鈴蘭台着・鈴蘭台止まりの鈴蘭台着。
   粟生線の電車が鈴蘭台で三田方面に接続する場合は、その北鈴蘭台着を入れる
-- 北鈴蘭台発 新開地方面 21時以降（乗り過ごし時の戻り案内）
+- 北鈴蘭台発 新開地方面 16時以降（乗り過ごし時の戻り案内）
 
 内容が変わったときだけファイルを書き換える（取得日だけの変更では書き換えない）。
 取得結果がおかしいとき（本数が極端に少ない等）は書き換えずに終了コード1で終わる。
@@ -34,6 +34,12 @@ ARAI, AKASHI, SHINKAICHI, KITA_SUZURANDAI = 26264, 26377, 26399, 26332
 SANYO_UP = 5920          # 山陽 大阪梅田・新開地方面
 SHINTETSU_DOWN = 5771    # 神戸電鉄 新開地 → 三田・粟生方面
 SHINTETSU_UP_KITA = 5820  # 神戸電鉄 北鈴蘭台 → 新開地・鈴蘭台方面
+
+# 取り始める時刻（分）。荒井は夕方の直通特急（16:57発〜）も入れるため16時から
+ARAI_FROM = 16 * 60
+AKASHI_FROM = 21 * 60
+SHINTETSU_FROM = 16 * 60
+KITA_UP_FROM = 16 * 60
 
 TYPE_LABELS = ("普通", "準急", "急行", "特快速", "快速", "直通特急", "特急", "Ｓ特急", "S特急", "阪神特急")
 
@@ -114,11 +120,11 @@ def short(name):
 
 # ---------------------------------------------------------------- 山陽
 
-def sanyo_from(code, origin_name):
+def sanyo_from(code, origin_name, from_min):
     tt = get(f"/timetable/{code}/{SANYO_UP}?kind={KIND_WEEKDAY}")
     res = []
-    for dep_min, path in train_links(tt, range(20, 25)):
-        if dep_min < 21 * 60:
+    for dep_min, path in train_links(tt, range(from_min // 60, 25)):
+        if dep_min < from_min:
             continue
         dest, ttype, stops = parse_train(get(path))
         o = stop(stops, origin_name)
@@ -163,11 +169,14 @@ def sanyo_from(code, origin_name):
 def shintetsu_down():
     tt = get(f"/timetable/{SHINKAICHI}/{SHINTETSU_DOWN}?kind={KIND_WEEKDAY}")
     trains = []
-    for dep_min, path in train_links(tt, range(21, 25)):
+    for dep_min, path in train_links(tt, range(0, 25)):
+        dm = dep_min if dep_min >= 240 else dep_min + 1440
+        if dm < SHINTETSU_FROM:
+            continue
         dest, ttype, stops = parse_train(get(path))
         sz, kt = stop(stops, "鈴蘭台"), stop(stops, "北鈴蘭台")
         trains.append({
-            "dep": dep_min if dep_min >= 240 else dep_min + 1440,
+            "dep": dm,
             "type": ttype, "dest": short(dest),
             "suzuArr": svc(sz[1]) if sz and sz[1] else None,
             "suzuDep": svc(sz[2]) if sz and sz[2] else None,
@@ -206,7 +215,7 @@ def kita_up():
     res = []
     for dep_min, path in train_links(tt, range(0, 25)):
         dm = dep_min if dep_min >= 240 else dep_min + 1440
-        if dm < 21 * 60:
+        if dm < KITA_UP_FROM:
             continue
         dest, _, _ = parse_train(get(path))
         res.append((dm, OrderedDict([("dep", fmt(dm)), ("dest", short(dest))])))
@@ -260,8 +269,8 @@ def main():
     old = json.loads(OUT.read_text(encoding="utf-8"), object_pairs_hook=OrderedDict)
 
     data = {
-        "sanyo": {"weekday": sanyo_from(ARAI, "荒井")},
-        "sanyoAkashi": {"weekday": sanyo_from(AKASHI, "山陽明石")},
+        "sanyo": {"weekday": sanyo_from(ARAI, "荒井", ARAI_FROM)},
+        "sanyoAkashi": {"weekday": sanyo_from(AKASHI, "山陽明石", AKASHI_FROM)},
         "shintetsu": {"weekday": shintetsu_down()},
         "kitaSuzurandaiUp": {
             "description": old.get("kitaSuzurandaiUp", {}).get("description", "北鈴蘭台発 新開地方面。乗り過ごして山の街側から戻るときの目安"),

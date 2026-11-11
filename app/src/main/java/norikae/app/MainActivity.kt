@@ -48,7 +48,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -228,14 +228,14 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            // 乗る駅のタブ：荒井 / 明石（普通）/ 明石（特急）
+            // 乗る駅のタブ：荒井（普通）/ 荒井（特急）/ 明石（普通）/ 明石（特急）
             item {
-                TabRow(selectedTabIndex = tabIndex) {
+                ScrollableTabRow(selectedTabIndex = tabIndex, edgePadding = 0.dp) {
                     StartTab.entries.forEachIndexed { i, t ->
                         Tab(
                             selected = i == tabIndex,
                             onClick = { tabIndex = i; Store.saveLastTab(ctx, i) },
-                            text = { Text(t.label, fontSize = 13.sp, color = if (t.redLabel) RED else Color.Unspecified) },
+                            text = { Text(t.label, fontSize = 12.sp, maxLines = 1, color = if (t.redLabel) RED else Color.Unspecified) },
                         )
                     }
                 }
@@ -782,7 +782,8 @@ private enum class StartTab(
     val filter: (SanyoTrain) -> Boolean,
     val redLabel: Boolean = false,
 ) {
-    ARAI("荒井", Origin.ARAI, { true }),
+    ARAI_LOCAL("荒井（普通）", Origin.ARAI, { it.type == TrainType.LOCAL }),
+    ARAI_LIMITED("荒井（特急）", Origin.ARAI, { it.type.isLimited }, redLabel = true),
     AKASHI_LOCAL("明石（普通）", Origin.AKASHI, { it.type == TrainType.LOCAL }),
     AKASHI_LIMITED("明石（特急）", Origin.AKASHI, { it.type.isLimited }, redLabel = true),
 }
