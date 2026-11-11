@@ -56,7 +56,8 @@ class TimetableTest {
     @Test
     fun loadsShintetsuFromJson() {
         val weekday = tt.shintetsu
-        assertEquals("21:11", weekday.first().dep.toString())
+        assertEquals("16:08", weekday.first().dep.toString())
+        assertTrue(weekday.any { it.dep == t("21:11") })
         assertEquals("24:03", weekday.last().dep.toString())
         assertNull(weekday.last().kitaSuzurandaiArr, "24:03 は鈴蘭台止まり")
         assertEquals("2025-03-15", tt.shintetsuRevision)
@@ -83,6 +84,8 @@ class TimetableTest {
 class RetrievedAtTest {
     @Test
     fun retrievedAtIsParsed() {
-        assertEquals("2026-11-09", loadRealTimetable().retrievedAt)
+        // 週1回の自動更新で日付が変わるので、形式だけ確かめる
+        val d = loadRealTimetable().retrievedAt
+        assertTrue(d != null && Regex("""\d{4}-\d{2}-\d{2}""").matches(d), "取得日: $d")
     }
 }

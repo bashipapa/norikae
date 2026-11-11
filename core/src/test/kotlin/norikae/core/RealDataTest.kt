@@ -13,9 +13,10 @@ class RealDataTest {
 
     @Test
     fun sanyoLoaded() {
-        assertEquals(13, tt.sanyo.size)
-        assertEquals("21:00", tt.sanyo.first().dep.toString())
+        // 荒井発は16時台から（夕方の直通特急 16:57発〜を含む）
+        assertEquals("16:03", tt.sanyo.first().dep.toString())
         assertEquals("24:14", tt.sanyo.last().dep.toString())
+        assertEquals(13, tt.sanyo.count { it.dep >= t("21:00") })
     }
 
     @Test
@@ -160,5 +161,50 @@ class AkashiDataTest {
         // 21:14 に明石で乗車：特急タブなら 21:13 直通特急、普通タブなら 21:00 普通（21:15 はまだ発車前）
         assertEquals("21:13", planner.routeFromBoarding(t("21:14"), Origin.AKASHI, limited)!!.sanyo!!.dep.toString())
         assertEquals("21:15", planner.routeFromBoarding(t("21:16"), Origin.AKASHI, local)!!.sanyo!!.dep.toString())
+    }
+}
+
+/** 荒井（特急）・荒井（普通）タブ（夕方） */
+class AraiEveningTest {
+    private val tt = loadRealTimetable()
+    private val planner = RoutePlanner(tt)
+    private val limited: (SanyoTrain) -> Boolean = { it.type.isLimited }
+    private val local: (SanyoTrain) -> Boolean = { it.type == TrainType.LOCAL }
+
+    @Test
+    fun limitedTrainsStopAtAraiInEvening() {
+        val lim = tt.sanyo.filter { it.type.isLimited }
+        assertEquals("16:57", lim.first().dep.toString())
+        assertEquals("20:24", lim.last().dep.toString())
+        assertTrue(lim.any { it.type == TrainType.S_LIMITED })
+    }
+
+    @Test
+    fun limitedTabRoutes() {
+        val routes = planner.plan(t("17:00"), Origin.ARAI, limited)
+        assertTrue(routes.isNotEmpty() && routes.all { it.sanyo!!.type.isLimited })
+        assertEquals("17:04", routes.first().sanyo!!.dep.toString())
+        // 特急で北鈴蘭台まで帰れる最終：20:24 直通特急 → 新開地 21:08 → 21:11 三田行き → 北鈴蘭台 21:29
+        val last = planner.lastDepartureRoute(Origin.ARAI, limited)!!
+        assertEquals("20:24", last.sanyo!!.dep.toString())
+        assertEquals("21:11", last.shintetsu.dep.toString())
+        assertEquals("21:29", last.kitaArr.toString())
+        assertTrue(last.umedaRisk)
+    }
+
+    @Test
+    fun localTabIncludesEveningAndNight() {
+        val routes = planner.plan(t("16:00"), Origin.ARAI, local)
+        assertTrue(routes.all { it.sanyo!!.type == TrainType.LOCAL })
+        assertEquals("16:03", routes.first().sanyo!!.dep.toString())
+        assertEquals("22:47", routes.last().sanyo!!.dep.toString()) // 最後は鈴蘭台止まり（タクシー）
+    }
+
+    @Test
+    fun boardingLimitedAtAraiInEvening() {
+        // 18:28 に荒井で特急に乗った → 18:27 直通特急
+        val r = planner.routeFromBoarding(t("18:28"), Origin.ARAI, limited)!!
+        assertEquals("18:27", r.sanyo!!.dep.toString())
+        assertEquals("19:10", r.shinkaichiArr.toString())
     }
 }
