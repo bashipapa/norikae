@@ -250,7 +250,7 @@ class MainActivity : ComponentActivity() {
             item {
                 Button(
                     onClick = {
-                        if (TripController.startFromBoardingNow(ctx, tab.origin, tab.filter)) {
+                        if (TripController.startFromBoardingNow(ctx, tab.origin, tab.boardingFilter)) {
                             toast("乗車時刻からアラームを設定しました")
                         } else if (sanyoMissing) {
                             toast("経路を決められません。右上の設定で「荒井→新開地の所要分」を設定してください")
@@ -806,14 +806,23 @@ class MainActivity : ComponentActivity() {
     private fun toast(text: String) = Toast.makeText(this, text, Toast.LENGTH_LONG).show()
 }
 
-/** 乗る駅のタブ */
+/**
+ * 乗る駅のタブ。
+ * [filter] は一覧に出す列車、[boardingFilter] は「今乗った」で乗車時刻に合わせる列車（時間帯で絞らない）。
+ */
 private enum class StartTab(
     val label: String,
     val origin: Origin,
     val filter: (SanyoTrain) -> Boolean,
     val redLabel: Boolean = false,
+    val boardingFilter: (SanyoTrain) -> Boolean = filter,
 ) {
-    ARAI_LOCAL("荒井（普通）", Origin.ARAI, { it.type == TrainType.LOCAL }),
+    // 荒井の普通は、一覧には21時以降だけ出す（夕方は特急タブを使う）
+    ARAI_LOCAL(
+        "荒井（普通）", Origin.ARAI,
+        filter = { it.type == TrainType.LOCAL && it.dep >= ServiceTime(21 * 60) },
+        boardingFilter = { it.type == TrainType.LOCAL },
+    ),
     ARAI_LIMITED("荒井（特急）", Origin.ARAI, { it.type.isLimited }, redLabel = true),
     AKASHI_LOCAL("明石（普通）", Origin.AKASHI, { it.type == TrainType.LOCAL }),
     AKASHI_LIMITED("明石（特急）", Origin.AKASHI, { it.type.isLimited }, redLabel = true),
