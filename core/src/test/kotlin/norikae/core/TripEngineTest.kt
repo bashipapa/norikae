@@ -69,7 +69,10 @@ class TripEngineTest {
         // 5回鳴らしたら止める
         s = tr.state
         repeat(10) { i -> s = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.SHINKAICHI_CHECK, t("22:23") + i)).state }
-        assertEquals(5, s.shinkaichiRings)
+        // 上限なし：乗っている限り鳴らし続ける（1回目＋10回）
+        assertEquals(11, s.shinkaichiRings)
+        val more = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.SHINKAICHI_CHECK, t("22:34")))
+        assertTrue(more.actions.any { it is TripAction.Ring } && more.actions.any { it is TripAction.Schedule })
         // 乗り過ごした先で降りたら、戻ってくる前提で北鈴蘭台アラームを入れ直す
         tr = engine.reduce(s, TripEvent.MotionChanged(Motion.WALKING, t("22:30")))
         assertEquals(Phase.TRANSFERRING, tr.state.phase)
@@ -295,5 +298,64 @@ class ShinkaichiLocationTest {
         assertEquals(Phase.OVERSHOT_SHINKAICHI, s.phase)
         val tr = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.KITA_PRE, t("18:02")))
         assertTrue(tr.actions.any { it is TripAction.Ring && it.kind == RingKind.WAKE })
+    }
+}
+
+/** 乗り過ごしたら、電車に乗っている限り鳴らし続ける */
+class KeepRingingWhileOnTrainTest {
+    private val tt = loadRealTimetable()
+    private val engine = TripEngine(RoutePlanner(tt), StationLocations(tt.stations))
+    private val kosoku = tt.stations.getValue(StationId.KOSOKU_KOBE)
+
+    private fun overshot(): TripState {
+        val sanyo = tt.sanyo.first { it.dep == t("16:57") } // 新開地 17:41着
+        val train = tt.shintetsu.first { it.dep == t("17:49") }
+        var s = engine.start(Route(sanyo, sanyo.shinkaichiArr, false, train, train.finalArr!!), "2026-11-12").state
+        s = engine.reduce(s, TripEvent.LocationChanged(kosoku, t("17:42"))).state
+        assertEquals(Phase.OVERSHOT_SHINKAICHI, s.phase)
+        return s
+    }
+
+    /** 東へ1分に約1km進む（三宮・梅田方面へ走っている） */
+    private fun moving(i: Int) = LatLon(kosoku.lat, kosoku.lon + 0.011 * (i + 1))
+
+    @Test
+    fun keepsRingingWhileTrainMoves() {
+        var s = overshot()
+        repeat(30) { i ->
+            val now = t("17:43") + i
+            s = engine.reduce(s, TripEvent.LocationChanged(moving(i), now)).state
+            val tr = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.SHINKAICHI_CHECK, now))
+            assertTrue(tr.actions.any { it is TripAction.Ring }, "${i + 1}回目も鳴る")
+            s = tr.state
+        }
+        assertEquals(Phase.OVERSHOT_SHINKAICHI, s.phase)
+    }
+
+    @Test
+    fun stopsWhenStayingAtOneStationForFiveMinutes() {
+        var s = overshot()
+        // 次の駅のホームで止まって待っている（歩行は検知されない）
+        val platform = moving(2)
+        s = engine.reduce(s, TripEvent.MotionChanged(Motion.STILL, t("17:45"))).state
+        var last: Transition? = null
+        for (i in 0..5) {
+            last = engine.reduce(s, TripEvent.LocationChanged(platform, t("17:45") + i))
+            s = last.state
+        }
+        // 17:45 から5分 → 降りたとみなして警報を止め、新開地に戻る案内
+        assertEquals(Phase.TRANSFERRING, s.phase)
+        assertTrue(TripAction.StopRinging in last!!.actions)
+    }
+
+    @Test
+    fun stoppedTrainStillRingsIfInVehicle() {
+        var s = overshot()
+        // 駅に長く停車していても、乗り物の判定なら乗っているとみなして鳴らし続ける
+        s = engine.reduce(s, TripEvent.MotionChanged(Motion.IN_VEHICLE, t("17:45"))).state
+        val p = moving(2)
+        for (i in 0..6) s = engine.reduce(s, TripEvent.LocationChanged(p, t("17:45") + i)).state
+        val tr = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.SHINKAICHI_CHECK, t("17:52")))
+        assertTrue(tr.actions.any { it is TripAction.Ring })
     }
 }

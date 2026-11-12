@@ -49,6 +49,10 @@ data class TripState(
     val lastLon: Double? = null,
     /** 最後に位置を取った時刻（営業日基準の分）。古い位置は判定に使わない */
     val lastLocAt: Int? = null,
+    /** とどまっている場所と、そこに来た時刻（150m以上動いたら更新）。乗り過ごしのあと降りたかの判定に使う */
+    val stayLat: Double? = null,
+    val stayLon: Double? = null,
+    val stayAt: Int? = null,
     val shinkaichiRings: Int = 0,
     val kitaRings: Int = 0,
     val wrongLineWarned: Boolean = false,
@@ -109,6 +113,8 @@ class TripEngine(
         const val AT_STATION_RADIUS_M = 250.0
         /** この分数より古い位置は判定に使わない */
         const val LOCATION_FRESH_MIN = 3
+        /** この距離以内なら「同じ場所にとどまっている」 */
+        const val STAY_RADIUS_M = 150.0
 
         // 北鈴蘭台〜山の街は約800m、鈴蘭台〜鈴蘭台西口は約560m。範囲が重ならない大きさにしている
         const val KITA_RADIUS_M = 400.0
@@ -146,9 +152,9 @@ class TripEngine(
         if (state.phase == Phase.DONE) return Transition(state, emptyList())
         return when (event) {
             is TripEvent.MotionChanged -> onMotion(state.copy(lastMotion = event.motion), event)
-            is TripEvent.LocationChanged -> onLocation(
-                state.copy(lastLat = event.location.lat, lastLon = event.location.lon, lastLocAt = event.at.minutes), event,
-            )
+            is TripEvent.LocationChanged -> onLocation(withStay(state, event).copy(
+                lastLat = event.location.lat, lastLon = event.location.lon, lastLocAt = event.at.minutes,
+            ), event)
             is TripEvent.AlarmFired -> onAlarm(state, event)
             is TripEvent.UserFinished -> done(state, "終了しました")
             is TripEvent.UserTransferring -> toTransferring(state, "乗り換え中にしました")
@@ -273,6 +279,12 @@ class TripEngine(
                 if (whereAround(StationId.SHINKAICHI, StationId.KOSOKU_KOBE, e.location) == Where.AT) {
                     return toTransferring(state, "新開地にいるので、乗り換え中に戻しました")
                 }
+                // 同じ場所にしばらくとどまっている → 次の駅などで降りたとみなす（歩行と同じ扱い）
+                if (isOffTrain(state, e.at)) return onWalking(state, e.at)
+                return Transition(state, emptyList())
+            }
+            Phase.OVERSHOT_KITA -> {
+                if (isOffTrain(state, e.at)) return onWalking(state, e.at)
                 return Transition(state, emptyList())
             }
             Phase.RIDING_SHINTETSU -> Unit
@@ -335,6 +347,7 @@ class TripEngine(
         val stillRiding = state.phase == Phase.RIDING_SANYO ||
             (state.phase == Phase.OVERSHOT_SHINKAICHI && state.lastMotion != Motion.WALKING)
         if (!stillRiding) return Transition(state, emptyList())
+        if (state.phase == Phase.OVERSHOT_SHINKAICHI && isOffTrain(state, t)) return onWalking(state, t)
         when (whereAround(StationId.SHINKAICHI, StationId.KOSOKU_KOBE, freshLocation(state, t))) {
             // 新開地にいる：歩行を検知できなくても、降りて乗り換え中とみなす
             Where.AT -> return toTransferring(state, "新開地にいるので、乗り換え中とみなしました")
@@ -368,7 +381,8 @@ class TripEngine(
     private fun checkKita(state: TripState, t: ServiceTime): Transition {
         val loc = state.lastLocation
         when (state.phase) {
-            Phase.RIDING_SHINTETSU, Phase.OVERSHOT_KITA -> Unit
+            Phase.RIDING_SHINTETSU -> Unit
+            Phase.OVERSHOT_KITA -> if (isOffTrain(state, t)) return onWalking(state, t)
             Phase.TRANSFERRING -> {
                 // 神戸電鉄に乗ったのを検知できていない。新開地にいるなら乗り遅れの可能性
                 if (stations.isNear(StationId.SHINKAICHI, loc, SHINKAICHI_RADIUS_M) == true) {
@@ -427,6 +441,23 @@ class TripEngine(
         val back = planner.returnTrain(t + RETURN_MARGIN_MIN)
             ?: return "北鈴蘭台に戻る電車はもうありません。タクシーを検討してください"
         return "戻る電車の目安：北鈴蘭台 ${back.dep}着（新開地方面・${back.dest}行き）"
+    }
+
+    /** とどまっている場所を更新する（前の場所から [STAY_RADIUS_M] 以上動いたら、今の場所・時刻に置き直す） */
+    private fun withStay(state: TripState, e: TripEvent.LocationChanged): TripState {
+        val stay = if (state.stayLat != null && state.stayLon != null) LatLon(state.stayLat, state.stayLon) else null
+        return if (stay == null || state.stayAt == null || stay.distanceTo(e.location) > STAY_RADIUS_M) {
+            state.copy(stayLat = e.location.lat, stayLon = e.location.lon, stayAt = e.at.minutes)
+        } else {
+            state
+        }
+    }
+
+    /** 電車を降りているとみなせるか：新しい位置が取れていて、同じ場所に [AlarmSettings.offTrainStayMinutes] 分以上、乗り物ではない */
+    private fun isOffTrain(state: TripState, t: ServiceTime): Boolean {
+        val since = state.stayAt ?: return false
+        if (freshLocation(state, t) == null) return false
+        return t.minutes - since >= settings.offTrainStayMinutes && state.lastMotion != Motion.IN_VEHICLE
     }
 
     /** 取ってから [LOCATION_FRESH_MIN] 分以内の位置だけ使う */

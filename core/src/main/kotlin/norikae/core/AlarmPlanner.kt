@@ -31,8 +31,10 @@ data class AlarmSettings(
     val mainMinutes: Int = 1,
     /** 到着から何分後に「降りたか」を確認するか */
     val checkAfterMinutes: Int = 2,
-    /** 乗り過ごし警報を何回まで繰り返すか（1分おき） */
-    val maxOvershootRings: Int = 5,
+    /** 乗り過ごし警報を何回まで繰り返すか（1分おき）。既定は上限なし＝電車に乗っている限り鳴らし続ける */
+    val maxOvershootRings: Int = Int.MAX_VALUE,
+    /** 乗り過ごしのあと、同じ場所（150m以内）にこの分数以上とどまり、乗り物でなければ「降りた」とみなす */
+    val offTrainStayMinutes: Int = 5,
     /** 普通優先の許容差（分） */
     val localPreferenceToleranceMinutes: Int = 15,
 )
