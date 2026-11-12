@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import norikae.core.Phase
 import norikae.core.TripEvent
 
 /** ロック画面の上に出る、アラーム鳴動中の画面 */
@@ -54,6 +55,17 @@ class RingingActivity : ComponentActivity() {
                             },
                             modifier = Modifier.fillMaxWidth().height(96.dp),
                         ) { Text("起きた（止める）", fontSize = 24.sp) }
+                        // 新開地の乗り過ごし判定が誤りのとき（実は新開地で乗り換え中）
+                        if (Store.trip(this@RingingActivity)?.phase == Phase.OVERSHOT_SHINKAICHI) {
+                            OutlinedButton(
+                                onClick = {
+                                    val (_, time) = TripController.now()
+                                    TripController.handle(this@RingingActivity, TripEvent.UserTransferring(time))
+                                    finish()
+                                },
+                                modifier = Modifier.fillMaxWidth().height(64.dp),
+                            ) { Text("新開地で乗り換え中（乗り過ごしていない）", fontSize = 18.sp) }
+                        }
                         OutlinedButton(
                             onClick = {
                                 val (_, time) = TripController.now()

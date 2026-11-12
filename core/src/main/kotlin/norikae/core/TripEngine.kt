@@ -47,6 +47,8 @@ data class TripState(
     val lastMotion: Motion? = null,
     val lastLat: Double? = null,
     val lastLon: Double? = null,
+    /** 最後に位置を取った時刻（営業日基準の分）。古い位置は判定に使わない */
+    val lastLocAt: Int? = null,
     val shinkaichiRings: Int = 0,
     val kitaRings: Int = 0,
     val wrongLineWarned: Boolean = false,
@@ -67,6 +69,8 @@ sealed interface TripEvent {
     data class MotionChanged(val motion: Motion, override val at: ServiceTime) : TripEvent
     data class LocationChanged(val location: LatLon, override val at: ServiceTime) : TripEvent
     data class AlarmFired(val kind: AlarmKind, override val at: ServiceTime) : TripEvent
+    /** ユーザーが「新開地で乗り換え中」を押した（乗り過ごしの誤判定を直す） */
+    data class UserTransferring(override val at: ServiceTime) : TripEvent
     /** ユーザーが「降りた」「終了」を押した */
     data class UserFinished(override val at: ServiceTime) : TripEvent
 }
@@ -101,6 +105,11 @@ class TripEngine(
         val KITA_KINDS = setOf(AlarmKind.KITA_PRE, AlarmKind.KITA_MAIN, AlarmKind.KITA_CHECK)
 
         const val SHINKAICHI_RADIUS_M = 700.0
+        /** この半径以内なら「その駅にいる」 */
+        const val AT_STATION_RADIUS_M = 250.0
+        /** この分数より古い位置は判定に使わない */
+        const val LOCATION_FRESH_MIN = 3
+
         // 北鈴蘭台〜山の街は約800m、鈴蘭台〜鈴蘭台西口は約560m。範囲が重ならない大きさにしている
         const val KITA_RADIUS_M = 400.0
         const val SUZURANDAI_RADIUS_M = 400.0
@@ -138,10 +147,11 @@ class TripEngine(
         return when (event) {
             is TripEvent.MotionChanged -> onMotion(state.copy(lastMotion = event.motion), event)
             is TripEvent.LocationChanged -> onLocation(
-                state.copy(lastLat = event.location.lat, lastLon = event.location.lon), event,
+                state.copy(lastLat = event.location.lat, lastLon = event.location.lon, lastLocAt = event.at.minutes), event,
             )
             is TripEvent.AlarmFired -> onAlarm(state, event)
             is TripEvent.UserFinished -> done(state, "終了しました")
+            is TripEvent.UserTransferring -> toTransferring(state, "乗り換え中にしました")
         }
     }
 
@@ -154,7 +164,7 @@ class TripEngine(
     }
 
     private fun onWalking(state: TripState, t: ServiceTime): Transition {
-        val loc = state.lastLocation
+        val loc = freshLocation(state, t)
         return when (state.phase) {
             Phase.RIDING_SANYO -> {
                 val timeOk = state.shinkaichiArr == null || t.minutes >= state.shinkaichiArr - 5
@@ -247,7 +257,27 @@ class TripEngine(
     // ---- 位置が変わった ----
 
     private fun onLocation(state: TripState, e: TripEvent.LocationChanged): Transition {
-        if (state.phase != Phase.RIDING_SHINTETSU) return Transition(state, emptyList())
+        val arr = state.shinkaichiArr
+        when (state.phase) {
+            Phase.RIDING_SANYO -> {
+                // 新開地着の2分前以降に、高速神戸側まで行っている → 乗り過ごし（次の駅に近づいた）
+                if (arr != null && e.at.minutes >= arr - 2 &&
+                    whereAround(StationId.SHINKAICHI, StationId.KOSOKU_KOBE, e.location) == Where.BEYOND
+                ) {
+                    return overshootShinkaichi(state, e.at)
+                }
+                return Transition(state, emptyList())
+            }
+            Phase.OVERSHOT_SHINKAICHI -> {
+                // 乗り過ごし判定のあとで新開地にいると分かった → 誤判定だったので乗り換え中に戻す
+                if (whereAround(StationId.SHINKAICHI, StationId.KOSOKU_KOBE, e.location) == Where.AT) {
+                    return toTransferring(state, "新開地にいるので、乗り換え中に戻しました")
+                }
+                return Transition(state, emptyList())
+            }
+            Phase.RIDING_SHINTETSU -> Unit
+            else -> return Transition(state, emptyList())
+        }
         if (!state.wrongLineWarned &&
             stations.isNear(StationId.SUZURANDAI_NISHIGUCHI, e.location, WRONG_LINE_RADIUS_M) == true
         ) {
@@ -269,7 +299,9 @@ class TripEngine(
             if (state.phase == Phase.RIDING_SANYO) ring(state, e.kind) else Transition(state, emptyList())
 
         AlarmKind.KITA_PRE, AlarmKind.KITA_MAIN ->
-            if (state.phase == Phase.RIDING_SHINTETSU || state.phase == Phase.TRANSFERRING) {
+            if (state.phase == Phase.RIDING_SHINTETSU || state.phase == Phase.TRANSFERRING ||
+                state.phase == Phase.OVERSHOT_SHINKAICHI
+            ) {
                 ring(state, e.kind)
             } else {
                 Transition(state, emptyList())
@@ -303,6 +335,20 @@ class TripEngine(
         val stillRiding = state.phase == Phase.RIDING_SANYO ||
             (state.phase == Phase.OVERSHOT_SHINKAICHI && state.lastMotion != Motion.WALKING)
         if (!stillRiding) return Transition(state, emptyList())
+        when (whereAround(StationId.SHINKAICHI, StationId.KOSOKU_KOBE, freshLocation(state, t))) {
+            // 新開地にいる：歩行を検知できなくても、降りて乗り換え中とみなす
+            Where.AT -> return toTransferring(state, "新開地にいるので、乗り換え中とみなしました")
+            // まだ新開地の手前（遅れ）：鳴らさず1分後にもう一度確認
+            Where.BEFORE -> return Transition(
+                state,
+                listOf(TripAction.Schedule(listOf(PlannedAlarm(AlarmKind.SHINKAICHI_CHECK, t + 1, "")))),
+            )
+            // 高速神戸側まで行っている、または位置が分からない：乗り過ごし（位置が無いときは安全のため鳴らす）
+            Where.BEYOND, Where.UNKNOWN -> return overshootShinkaichi(state, t)
+        }
+    }
+
+    private fun overshootShinkaichi(state: TripState, t: ServiceTime): Transition {
         if (state.shinkaichiRings >= settings.maxOvershootRings) return Transition(state, emptyList())
 
         val rings = state.shinkaichiRings + 1
@@ -332,6 +378,15 @@ class TripEngine(
             else -> return Transition(state, emptyList())
         }
         if (state.taxi) return checkSuzurandaiTerminal(state, t)
+        when (whereAround(StationId.KITA_SUZURANDAI, StationId.YAMANOMACHI, freshLocation(state, t))) {
+            Where.AT -> return done(state, "おかえりなさい（北鈴蘭台にいます）")
+            // まだ北鈴蘭台の手前（遅れ）：鳴らさず1分後にもう一度確認
+            Where.BEFORE -> return Transition(
+                state,
+                listOf(TripAction.Schedule(listOf(PlannedAlarm(AlarmKind.KITA_CHECK, t + 1, "")))),
+            )
+            Where.BEYOND, Where.UNKNOWN -> Unit
+        }
         val near = stations.isNear(StationId.KITA_SUZURANDAI, loc, KITA_RADIUS_M)
         if (near == true && state.lastMotion != Motion.IN_VEHICLE) {
             return done(state, "おかえりなさい（北鈴蘭台にいます）")
@@ -372,6 +427,42 @@ class TripEngine(
         val back = planner.returnTrain(t + RETURN_MARGIN_MIN)
             ?: return "北鈴蘭台に戻る電車はもうありません。タクシーを検討してください"
         return "戻る電車の目安：北鈴蘭台 ${back.dep}着（新開地方面・${back.dest}行き）"
+    }
+
+    /** 取ってから [LOCATION_FRESH_MIN] 分以内の位置だけ使う */
+    private fun freshLocation(state: TripState, t: ServiceTime): LatLon? {
+        val at = state.lastLocAt ?: return null
+        return if (t.minutes - at <= LOCATION_FRESH_MIN) state.lastLocation else null
+    }
+
+    private enum class Where { AT, BEFORE, BEYOND, UNKNOWN }
+
+    /**
+     * 駅 [station] に対して今どこにいるか。
+     * 半径 [AT_STATION_RADIUS_M] 以内なら AT、次の駅 [next] の方が近ければ BEYOND（通り過ぎた）、それ以外は BEFORE（まだ手前）。
+     */
+    private fun whereAround(station: StationId, next: StationId, loc: LatLon?): Where {
+        val s = stations[station] ?: return Where.UNKNOWN
+        val here = loc ?: return Where.UNKNOWN
+        val ds = here.distanceTo(s)
+        if (ds <= AT_STATION_RADIUS_M) return Where.AT
+        val n = stations[next] ?: return Where.UNKNOWN
+        return if (here.distanceTo(n) < ds) Where.BEYOND else Where.BEFORE
+    }
+
+    /** 新開地で降りて乗り換え中にする（乗り過ごしの誤判定を直すときも） */
+    private fun toTransferring(state: TripState, message: String): Transition {
+        if (state.phase != Phase.RIDING_SANYO && state.phase != Phase.OVERSHOT_SHINKAICHI) {
+            return Transition(state, emptyList())
+        }
+        return Transition(
+            state.copy(phase = Phase.TRANSFERRING, shinkaichiRings = 0),
+            listOf(
+                TripAction.StopRinging,
+                TripAction.Cancel(SHINKAICHI_KINDS),
+                TripAction.Notify("$message：神戸電鉄 ${ServiceTime(state.shintetsuDep)} ${state.shintetsuDest}行き"),
+            ),
+        )
     }
 
     private fun done(state: TripState, message: String) = Transition(

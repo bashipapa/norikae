@@ -208,3 +208,92 @@ class TripEngineTest {
         assertTrue(tr.actions.any { it is TripAction.Notify && it.message.contains("タクシー") })
     }
 }
+
+/** 新開地の乗り過ごし判定（2026-11-12 の誤判定の再現と、位置を使った判定） */
+class ShinkaichiLocationTest {
+    private val tt = loadRealTimetable()
+    private val stations = StationLocations(tt.stations)
+    private val engine = TripEngine(RoutePlanner(tt), stations)
+
+    // 実際のログの位置（新開地から約40m）
+    private val atShinkaichi = LatLon(34.67622, 135.16939)
+    private val nearKosokuKobe = LatLon(34.67985, 135.17520)
+    // 新開地の手前（西代・大開方面に約700m）
+    private val beforeShinkaichi = LatLon(34.67300, 135.16300)
+
+    /** 荒井 16:57 直通特急 → 新開地 17:41着 → 17:49 岡場行き → 北鈴蘭台 18:07着（当日の経路） */
+    private fun started(): TripState {
+        val sanyo = tt.sanyo.first { it.dep == t("16:57") }
+        val train = tt.shintetsu.first { it.dep == t("17:49") }
+        val route = Route(sanyo, sanyo.shinkaichiArr, false, train, train.finalArr!!)
+        return engine.start(route, "2026-11-12").state
+    }
+
+    @Test
+    fun reproduceLogNoWalkingButAtShinkaichi() {
+        var s = started()
+        assertEquals("17:41", ServiceTime(s.shinkaichiArr!!).toString())
+        // 17:43:27 位置（新開地の近く）、17:43:34 停止。歩行は来ない
+        s = engine.reduce(s, TripEvent.LocationChanged(atShinkaichi, t("17:43"))).state
+        s = engine.reduce(s, TripEvent.MotionChanged(Motion.STILL, t("17:43"))).state
+        val tr = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.SHINKAICHI_CHECK, t("17:43")))
+        assertEquals(Phase.TRANSFERRING, tr.state.phase)
+        assertTrue(tr.actions.none { it is TripAction.Ring })
+    }
+
+    @Test
+    fun approachingKosokuKobeIsOvershoot() {
+        var s = started()
+        val tr = engine.reduce(s, TripEvent.LocationChanged(nearKosokuKobe, t("17:43")))
+        assertEquals(Phase.OVERSHOT_SHINKAICHI, tr.state.phase)
+        assertTrue(tr.actions.any { it is TripAction.Ring && it.kind == RingKind.OVERSHOT_SHINKAICHI })
+    }
+
+    @Test
+    fun delayedTrainBeforeShinkaichiDoesNotRing() {
+        var s = started()
+        s = engine.reduce(s, TripEvent.LocationChanged(beforeShinkaichi, t("17:42"))).state
+        val tr = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.SHINKAICHI_CHECK, t("17:43")))
+        assertEquals(Phase.RIDING_SANYO, tr.state.phase)
+        assertTrue(tr.actions.none { it is TripAction.Ring })
+        assertTrue(tr.actions.any { it is TripAction.Schedule }, "1分後にもう一度確認")
+    }
+
+    @Test
+    fun staleLocationIsIgnored() {
+        var s = started()
+        // 10分前の位置（新開地の近く）は古いので使わない → 位置不明として従来どおり鳴らす
+        s = engine.reduce(s, TripEvent.LocationChanged(atShinkaichi, t("17:33"))).state
+        val tr = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.SHINKAICHI_CHECK, t("17:43")))
+        assertEquals(Phase.OVERSHOT_SHINKAICHI, tr.state.phase)
+    }
+
+    @Test
+    fun misjudgedOvershootCorrectsItselfWhenAtShinkaichi() {
+        var s = started()
+        // 位置が無くて乗り過ごし判定 → そのあと新開地の位置が取れた → 乗り換え中に戻る
+        s = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.SHINKAICHI_CHECK, t("17:43"))).state
+        assertEquals(Phase.OVERSHOT_SHINKAICHI, s.phase)
+        val tr = engine.reduce(s, TripEvent.LocationChanged(atShinkaichi, t("17:44")))
+        assertEquals(Phase.TRANSFERRING, tr.state.phase)
+        assertTrue(TripAction.StopRinging in tr.actions)
+    }
+
+    @Test
+    fun userCanSayTransferring() {
+        var s = started()
+        s = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.SHINKAICHI_CHECK, t("17:43"))).state
+        val tr = engine.reduce(s, TripEvent.UserTransferring(t("17:44")))
+        assertEquals(Phase.TRANSFERRING, tr.state.phase)
+        assertTrue(TripAction.Cancel(setOf(AlarmKind.SHINKAICHI_PRE, AlarmKind.SHINKAICHI_MAIN, AlarmKind.SHINKAICHI_CHECK)) in tr.actions)
+    }
+
+    @Test
+    fun kitaAlarmsRingEvenIfShinkaichiWasMisjudged() {
+        var s = started()
+        s = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.SHINKAICHI_CHECK, t("17:43"))).state
+        assertEquals(Phase.OVERSHOT_SHINKAICHI, s.phase)
+        val tr = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.KITA_PRE, t("18:02")))
+        assertTrue(tr.actions.any { it is TripAction.Ring && it.kind == RingKind.WAKE })
+    }
+}

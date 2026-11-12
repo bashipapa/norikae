@@ -77,6 +77,7 @@ import norikae.core.DrinkingModeRule
 import norikae.core.LatLon
 import norikae.core.RingKind
 import norikae.core.Origin
+import norikae.core.Phase
 import norikae.core.Route
 import norikae.core.SanyoTrain
 import norikae.core.ServiceTime
@@ -222,6 +223,11 @@ class MainActivity : ComponentActivity() {
                                 TextButton(onClick = { startActivity(FitbitHelper.openGoogleHealth(ctx)) }) {
                                     Text("Google Health を開いて Fitbit Air にアラームを入れる")
                                 }
+                            }
+                            if (trip.phase == Phase.RIDING_SANYO || trip.phase == Phase.OVERSHOT_SHINKAICHI) {
+                                OutlinedButton(onClick = {
+                                    TripController.handle(ctx, TripEvent.UserTransferring(TripController.now().second)); refresh()
+                                }) { Text("新開地で乗り換え中") }
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Button(onClick = {

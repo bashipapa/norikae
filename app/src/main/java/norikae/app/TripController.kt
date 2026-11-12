@@ -91,6 +91,7 @@ object TripController {
             is TripEvent.MotionChanged -> Unit // onMotion で記録済み
             is TripEvent.AlarmFired -> TripLog.add(ctx, TripLog.Category.ALARM, "${alarmLabel(event.kind)}の時刻（${event.at}）：${Notifier.phaseLabel(state)}")
             is TripEvent.UserFinished -> TripLog.add(ctx, TripLog.Category.USER, "「降りた／終了」を押した")
+            is TripEvent.UserTransferring -> TripLog.add(ctx, TripLog.Category.USER, "「新開地で乗り換え中」を押した")
             is TripEvent.LocationChanged -> {
                 // 位置は20秒ごとに届くので、2分に1回だけ記録する
                 val nowMs = System.currentTimeMillis()

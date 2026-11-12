@@ -20,6 +20,7 @@
   "stations": {
     "ARAI": {"name": "荒井", "lat": 34.757765, "lon": 134.793723},
     "SHINKAICHI": {"name": "新開地", "lat": 34.676527, "lon": 135.169552},
+    "KOSOKU_KOBE": {"name": "高速神戸", "lat": 34.679917, "lon": 135.175329},
     "SUZURANDAI": {"name": "鈴蘭台", "lat": 34.723744, "lon": 135.145803},
     "KITA_SUZURANDAI": {"name": "北鈴蘭台", "lat": 34.738993, "lon": 135.151746},
     "YAMANOMACHI": {"name": "山の街", "lat": 34.746159, "lon": 135.153052},

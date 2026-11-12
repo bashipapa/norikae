@@ -22,6 +22,8 @@ enum class StationId(val label: String) {
     ARAI("荒井"),
     AKASHI("山陽明石"),
     SHINKAICHI("新開地"),
+    /** 新開地の次の駅（山陽・阪神方面）。ここに近づいたら新開地の乗り過ごし */
+    KOSOKU_KOBE("高速神戸"),
     SUZURANDAI("鈴蘭台"),
     KITA_SUZURANDAI("北鈴蘭台"),
     YAMANOMACHI("山の街"),
