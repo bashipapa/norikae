@@ -12,7 +12,9 @@ enum class AlarmKind {
     /** 北鈴蘭台 到着直前 */
     KITA_MAIN,
     /** 北鈴蘭台で降りたかの確認（鳴らさず判定だけ） */
-    KITA_CHECK;
+    KITA_CHECK,
+    /** 出発の15分前のお知らせ（事前に予定を入れたとき） */
+    DEPART_REMINDER;
 
     val isCheck: Boolean get() = this == SHINKAICHI_CHECK || this == KITA_CHECK
     val isShinkaichi: Boolean get() = this == SHINKAICHI_PRE || this == SHINKAICHI_MAIN || this == SHINKAICHI_CHECK
@@ -35,6 +37,8 @@ data class AlarmSettings(
     val maxOvershootRings: Int = Int.MAX_VALUE,
     /** 乗り過ごしのあと、同じ場所（150m以内）にこの分数以上とどまり、乗り物でなければ「降りた」とみなす */
     val offTrainStayMinutes: Int = 5,
+    /** 出発の何分前に「帰る時間」を知らせるか */
+    val departReminderMinutes: Int = 15,
     /** 普通優先の許容差（分） */
     val localPreferenceToleranceMinutes: Int = 15,
 )

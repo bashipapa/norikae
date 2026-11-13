@@ -142,9 +142,12 @@ class MainActivity : ComponentActivity() {
         var confirmRoute by remember { mutableStateOf<Route?>(null) }
 
         confirmRoute?.let { r ->
+            // 出発まで15分以上あれば「予定」として入れ、15分前に知らせる
+            val reminderAt = r.sanyo?.dep?.let { it - 15 }
+            val planned = reminderAt != null && now < reminderAt
             AlertDialog(
                 onDismissRequest = { confirmRoute = null },
-                title = { Text("この電車でアラームを設定しますか？") },
+                title = { Text(if (planned) "この電車で帰る予定を入れますか？" else "この電車でアラームを設定しますか？") },
                 text = {
                     Text(
                         (r.sanyo?.let { "${r.origin.label} ${it.dep}発 ${it.type.label} → " } ?: "") +
@@ -153,16 +156,17 @@ class MainActivity : ComponentActivity() {
                             "神鉄 ${r.shintetsu.dep}発 → ${r.alightStation} ${r.kitaArr}着" +
                             (r.totalMinutes?.let { "\n\n所要 ${formatMinutes(it)}" } ?: "") +
                             (r.waitAtShinkaichi?.let { "（新開地の乗り換え ${it}分${if (r.tightTransfer) "・走ってください" else ""}）" } ?: "") +
-                            if (r.taxiFromSuzurandai) "\n\n終電後のため鈴蘭台止まりです。鈴蘭台からタクシーで帰ります" else "",
+                            (if (r.taxiFromSuzurandai) "\n\n終電後のため鈴蘭台止まりです。鈴蘭台からタクシーで帰ります" else "") +
+                            if (planned) "\n\n出発の15分前（$reminderAt）に「帰る時間です」とアラームでお知らせします。新開地・北鈴蘭台のアラームも入ります" else "",
                     )
                 },
                 confirmButton = {
                     TextButton(onClick = {
-                        TripController.start(ctx, r)
-                        toast("アラームを設定しました")
+                        TripController.start(ctx, r, how = if (planned) "予定" else "一覧から選択", planned = planned)
+                        toast(if (planned) "予定を入れました（$reminderAt にお知らせ）" else "アラームを設定しました")
                         confirmRoute = null
                         refresh()
-                    }) { Text("設定する") }
+                    }) { Text(if (planned) "予定に入れる" else "設定する") }
                 },
                 dismissButton = { TextButton(onClick = { confirmRoute = null }) { Text("やめる") } },
             )
@@ -208,7 +212,17 @@ class MainActivity : ComponentActivity() {
                 item {
                     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("乗車中：${Notifier.phaseLabel(trip)}", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                            Text(
+                                (if (trip.phase == Phase.PLANNED) "" else "乗車中：") + Notifier.phaseLabel(trip),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 18.sp,
+                            )
+                            if (trip.phase == Phase.PLANNED) {
+                                trip.sanyoDep?.let { dep ->
+                                    Text("出発の15分前（${ServiceTime(dep - 15)}）に「帰る時間です」とお知らせします", fontSize = 13.sp)
+                                }
+                                trip.plan?.let { Text(it, fontSize = 13.sp) }
+                            }
                             trip.shinkaichiArr?.let { Text("新開地 ${ServiceTime(it)}着") }
                             Text(
                                 "神戸電鉄 ${ServiceTime(trip.shintetsuDep)} ${trip.shintetsuDest}行き → " +
@@ -230,9 +244,11 @@ class MainActivity : ComponentActivity() {
                                 }) { Text("新開地で乗り換え中") }
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Button(onClick = {
-                                    TripController.handle(ctx, TripEvent.UserFinished(TripController.now().second)); refresh()
-                                }) { Text(if (trip.taxi) "鈴蘭台で降りた" else "北鈴蘭台で降りた") }
+                                if (trip.phase != Phase.PLANNED) {
+                                    Button(onClick = {
+                                        TripController.handle(ctx, TripEvent.UserFinished(TripController.now().second)); refresh()
+                                    }) { Text(if (trip.taxi) "鈴蘭台で降りた" else "北鈴蘭台で降りた") }
+                                }
                                 OutlinedButton(onClick = { TripController.end(ctx); refresh() }) { Text("中止") }
                             }
                         }

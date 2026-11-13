@@ -359,3 +359,66 @@ class KeepRingingWhileOnTrainTest {
         assertTrue(tr.actions.any { it is TripAction.Ring })
     }
 }
+
+/** 事前に予定を入れたとき：15分前のお知らせと、出発時刻での乗車中への切り替え */
+class PlannedTripTest {
+    private val tt = loadRealTimetable()
+    private val engine = TripEngine(RoutePlanner(tt), StationLocations(tt.stations))
+    private val planner = RoutePlanner(tt)
+
+    /** 荒井 21:32 普通 → 新開地 22:43着 → 22:57 → 北鈴蘭台 23:15着 */
+    private val route = planner.plan(t("21:30")).first { it.sanyo!!.dep == t("21:32") }
+
+    @Test
+    fun plannedStartSchedulesReminder15MinutesBefore() {
+        val tr = engine.start(route, "2026-11-13", planned = true)
+        assertEquals(Phase.PLANNED, tr.state.phase)
+        val alarms = tr.actions.filterIsInstance<TripAction.Schedule>().single().alarms
+        val reminder = alarms.single { it.kind == AlarmKind.DEPART_REMINDER }
+        assertEquals("21:17", reminder.at.toString())
+        // 新開地・北鈴蘭台のアラームも同時に入る
+        assertTrue(alarms.any { it.kind == AlarmKind.SHINKAICHI_PRE } && alarms.any { it.kind == AlarmKind.KITA_MAIN })
+    }
+
+    @Test
+    fun reminderRingsWithThePlan() {
+        val s = engine.start(route, "2026-11-13", planned = true).state
+        val tr = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.DEPART_REMINDER, t("21:17")))
+        val ring = tr.actions.filterIsInstance<TripAction.Ring>().single()
+        assertEquals(RingKind.DEPART, ring.kind)
+        assertTrue(ring.message.contains("あと15分") && ring.message.contains("21:32発"), ring.message)
+        assertTrue(ring.message.contains("北鈴蘭台 23:15着"), ring.message)
+        assertEquals(Phase.PLANNED, tr.state.phase)
+    }
+
+    @Test
+    fun movementBeforeDepartureIsIgnored() {
+        var s = engine.start(route, "2026-11-13", planned = true).state
+        // 駅まで歩く・バスに乗るなどは無視（乗車中にならない）
+        s = engine.reduce(s, TripEvent.MotionChanged(Motion.WALKING, t("21:20"))).state
+        s = engine.reduce(s, TripEvent.MotionChanged(Motion.IN_VEHICLE, t("21:25"))).state
+        assertEquals(Phase.PLANNED, s.phase)
+    }
+
+    @Test
+    fun becomesRidingAtDepartureAndAlarmsWork() {
+        var s = engine.start(route, "2026-11-13", planned = true).state
+        // 出発後の最初の出来事で乗車中に切り替わり、新開地の予告が鳴る
+        val tr = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.SHINKAICHI_PRE, t("22:38")))
+        assertEquals(Phase.RIDING_SANYO, tr.state.phase)
+        assertTrue(tr.actions.any { it is TripAction.Ring && it.kind == RingKind.WAKE })
+    }
+
+    @Test
+    fun notPlannedStartsRidingImmediately() {
+        val tr = engine.start(route, "2026-11-13")
+        assertEquals(Phase.RIDING_SANYO, tr.state.phase)
+        assertTrue(tr.actions.filterIsInstance<TripAction.Schedule>().single().alarms.none { it.kind == AlarmKind.DEPART_REMINDER })
+    }
+
+    @Test
+    fun plannedStateSurvivesJsonRoundTrip() {
+        val s = engine.start(route, "2026-11-13", planned = true).state
+        assertEquals(s, TripState.fromJson(s.toJson()))
+    }
+}

@@ -38,7 +38,13 @@ object TripController {
 
     /** 経路を選んで開始（画面から） */
     @Synchronized
-    fun start(ctx: Context, route: Route, fromForeground: Boolean = true, how: String = "一覧から選択") {
+    fun start(
+        ctx: Context,
+        route: Route,
+        fromForeground: Boolean = true,
+        how: String = "一覧から選択",
+        planned: Boolean = false,
+    ) {
         val (date, _) = now()
         // 前の乗車が残っていれば片付ける
         if (isActive(ctx)) {
@@ -46,10 +52,11 @@ object TripController {
             end(ctx)
         }
         TripLog.add(ctx, TripLog.Category.START, "開始（$how）：${describe(route)}")
-        val transition = engine(ctx).start(route, date.toString())
+        val transition = engine(ctx).start(route, date.toString(), planned)
         apply(ctx, transition, before = null)
-        TripService.start(ctx, fromForeground)
-        FitbitHelper.notify(ctx, route)
+        // 予定（乗る前）のときは、位置の取得は出発15分前のお知らせから始める（電池のため）
+        if (!planned) TripService.start(ctx, fromForeground)
+        FitbitHelper.notify(ctx, route, planned)
     }
 
     private fun describe(route: Route): String = buildString {
@@ -105,6 +112,7 @@ object TripController {
     }
 
     private fun alarmLabel(kind: AlarmKind) = when (kind) {
+        AlarmKind.DEPART_REMINDER -> "出発15分前のお知らせ"
         AlarmKind.SHINKAICHI_PRE -> "新開地の予告"
         AlarmKind.SHINKAICHI_MAIN -> "新開地の本アラーム"
         AlarmKind.SHINKAICHI_CHECK -> "新開地で降りたかの確認"
@@ -115,6 +123,7 @@ object TripController {
 
     private fun ringLabel(k: norikae.core.RingKind) = when (k) {
         norikae.core.RingKind.WAKE -> "起こす"
+        norikae.core.RingKind.DEPART -> "帰る時間"
         norikae.core.RingKind.OVERSHOT_SHINKAICHI -> "新開地の乗り過ごし"
         norikae.core.RingKind.OVERSHOT_KITA -> "北鈴蘭台の乗り過ごし"
         norikae.core.RingKind.WRONG_LINE -> "電車違い"
@@ -218,15 +227,18 @@ object TripController {
         val train = p.shintetsuFromBoarding(ServiceTime(state.shintetsuDep))
         if (train != null) {
             val shinkaichiArr = state.shinkaichiArr
-            val alarms = if (state.phase == Phase.RIDING_SANYO && shinkaichiArr != null) {
+            val alarms = if ((state.phase == Phase.RIDING_SANYO || state.phase == Phase.PLANNED) && shinkaichiArr != null) {
                 val route = Route(null, ServiceTime(shinkaichiArr), true, train, train.kitaSuzurandaiArr ?: ServiceTime(state.kitaArr))
-                AlarmPlanner.plan(route, settings)
+                val reminder = state.sanyoDep?.takeIf { state.phase == Phase.PLANNED }?.let {
+                    norikae.core.PlannedAlarm(AlarmKind.DEPART_REMINDER, ServiceTime(it - settings.departReminderMinutes), "")
+                }
+                AlarmPlanner.plan(route, settings) + listOfNotNull(reminder)
             } else {
                 AlarmPlanner.kitaAlarms(train, settings)
             }
             // AlarmScheduler は過ぎた時刻を予約しない
             alarms.forEach { AlarmScheduler.schedule(ctx, it, serviceDate) }
         }
-        TripService.start(ctx, fromForeground = false)
+        if (state.phase != Phase.PLANNED) TripService.start(ctx, fromForeground = false)
     }
 }

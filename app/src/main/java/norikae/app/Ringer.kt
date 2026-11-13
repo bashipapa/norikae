@@ -45,6 +45,7 @@ object Ringer {
         ensureChannel(ctx)
         val title = when (kind) {
             RingKind.WAKE -> "起きて！"
+            RingKind.DEPART -> "帰る時間です"
             RingKind.OVERSHOT_SHINKAICHI -> "新開地を乗り過ごし！"
             RingKind.OVERSHOT_KITA -> "北鈴蘭台を乗り過ごし！"
             RingKind.WRONG_LINE -> "電車が違うかも！"
@@ -132,6 +133,7 @@ object Notifier {
     }
 
     fun phaseLabel(state: TripState): String = when (state.phase) {
+        norikae.core.Phase.PLANNED -> "乗る前（予定）"
         norikae.core.Phase.RIDING_SANYO -> "山陽に乗車中"
         norikae.core.Phase.TRANSFERRING -> "新開地で乗り換え中"
         norikae.core.Phase.RIDING_SHINTETSU -> "神戸電鉄に乗車中"

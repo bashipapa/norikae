@@ -7,6 +7,8 @@ import kotlinx.serialization.json.Json
 enum class Motion { IN_VEHICLE, WALKING, STILL }
 
 enum class Phase {
+    /** 乗る前（事前に予定を入れた）。出発時刻になったら自動で RIDING_SANYO になる */
+    PLANNED,
     /** 山陽に乗っている（新開地へ向かっている） */
     RIDING_SANYO,
     /** 新開地で降りた／乗り換え中 */
@@ -24,6 +26,8 @@ enum class Phase {
 enum class RingKind {
     /** 通常の起床アラーム（予告・本アラーム） */
     WAKE,
+    /** 出発の15分前「帰る時間です」 */
+    DEPART,
     OVERSHOT_SHINKAICHI,
     OVERSHOT_KITA,
     /** 粟生線・鈴蘭台止まりなど、北鈴蘭台に行かない電車に乗っている */
@@ -44,6 +48,10 @@ data class TripState(
     val transferAtSuzurandai: Boolean,
     /** 鈴蘭台止まりに乗り、鈴蘭台からタクシーで帰る */
     val taxi: Boolean = false,
+    /** 山陽の出発時刻（営業日基準の分）。予定（PLANNED）から乗車中に切り替える時刻 */
+    val sanyoDep: Int? = null,
+    /** 帰り道の説明（出発前のお知らせに出す） */
+    val plan: String? = null,
     val lastMotion: Motion? = null,
     val lastLat: Double? = null,
     val lastLon: Double? = null,
@@ -126,10 +134,18 @@ class TripEngine(
     }
 
     /** 乗車開始 */
-    fun start(route: Route, serviceDate: String): Transition {
+    /**
+     * アラームを入れる。[planned] が true なら「予定」として入れ、出発の [AlarmSettings.departReminderMinutes] 分前に知らせる。
+     * 出発時刻になったら自動で乗車中（RIDING_SANYO）に切り替わる。
+     */
+    fun start(route: Route, serviceDate: String, planned: Boolean = false): Transition {
+        val dep = route.sanyo?.dep
+        val isPlanned = planned && dep != null
         val state = TripState(
             serviceDate = serviceDate,
-            phase = Phase.RIDING_SANYO,
+            phase = if (isPlanned) Phase.PLANNED else Phase.RIDING_SANYO,
+            sanyoDep = dep?.minutes,
+            plan = describePlan(route),
             shinkaichiArr = route.shinkaichiArr?.minutes,
             umedaRisk = route.umedaRisk,
             shintetsuDep = route.shintetsu.dep.minutes,
@@ -145,11 +161,53 @@ class TripEngine(
             if (route.taxiFromSuzurandai) append("（鈴蘭台からタクシー）")
             if (route.umedaRisk) append("（梅田行きに注意）")
         }
-        return Transition(state, listOf(TripAction.Schedule(AlarmPlanner.plan(route, settings)), TripAction.Notify(summary)))
+        val alarms = AlarmPlanner.plan(route, settings).toMutableList()
+        if (isPlanned) {
+            alarms += PlannedAlarm(AlarmKind.DEPART_REMINDER, dep!! - settings.departReminderMinutes, "")
+            return Transition(
+                state,
+                listOf(
+                    TripAction.Schedule(alarms.sortedBy { it.at }),
+                    TripAction.Notify("予定を入れました：${dep - settings.departReminderMinutes} に「帰る時間」をお知らせします。${route.origin.label} ${dep}発"),
+                ),
+            )
+        }
+        return Transition(state, listOf(TripAction.Schedule(alarms), TripAction.Notify(summary)))
     }
 
-    fun reduce(state: TripState, event: TripEvent): Transition {
-        if (state.phase == Phase.DONE) return Transition(state, emptyList())
+    /** 帰り道の段取り（出発前のお知らせに出す） */
+    private fun describePlan(route: Route): String = buildString {
+        route.sanyo?.let { s ->
+            append("${route.origin.label} ${s.dep}発 ${s.type.label} ${s.dest}行き")
+            s.transferAt?.let { append(" → ${it}で${s.transferTrainType?.label ?: ""}に乗換") }
+            route.shinkaichiArr?.let { append(" → 新開地 ${it}着") }
+            route.waitAtShinkaichi?.let { append("（乗換${it}分${if (route.tightTransfer) "・走る" else ""}）") }
+            append(" → ")
+        }
+        append("神鉄 ${route.shintetsu.dep}発 ${route.shintetsu.dest}行き → ${route.alightStation} ${route.kitaArr}着")
+        if (route.taxiFromSuzurandai) append("（鈴蘭台からタクシー）")
+        route.totalMinutes?.let { append("。所要 ${formatMinutes(it)}") }
+    }
+
+    fun reduce(original: TripState, event: TripEvent): Transition {
+        if (original.phase == Phase.DONE) return Transition(original, emptyList())
+        // 予定（乗る前）は、出発の1分前を過ぎたら自動で乗車中にする
+        val state = if (original.phase == Phase.PLANNED &&
+            (original.sanyoDep == null || event.at.minutes >= original.sanyoDep - 1)
+        ) {
+            original.copy(phase = Phase.RIDING_SANYO)
+        } else {
+            original
+        }
+        if (state.phase == Phase.PLANNED) {
+            // 乗る前は、出発前のお知らせ・ボタン以外は何もしない（駅までの移動を誤判定しないため）
+            return when (event) {
+                is TripEvent.AlarmFired ->
+                    if (event.kind == AlarmKind.DEPART_REMINDER) departReminder(state) else Transition(state, emptyList())
+                is TripEvent.UserFinished -> done(state, "終了しました")
+                else -> Transition(state, emptyList())
+            }
+        }
         return when (event) {
             is TripEvent.MotionChanged -> onMotion(state.copy(lastMotion = event.motion), event)
             is TripEvent.LocationChanged -> onLocation(withStay(state, event).copy(
@@ -224,7 +282,7 @@ class TripEngine(
 
             Phase.OVERSHOT_KITA -> done(state, "降りたのを確認しました。${returnGuidance(state, t)}")
 
-            Phase.TRANSFERRING, Phase.DONE -> Transition(state, emptyList())
+            Phase.PLANNED, Phase.TRANSFERRING, Phase.DONE -> Transition(state, emptyList())
         }
     }
 
@@ -319,8 +377,19 @@ class TripEngine(
                 Transition(state, emptyList())
             }
 
+        AlarmKind.DEPART_REMINDER -> Transition(state, emptyList()) // 出発後に届いたものは無視
         AlarmKind.SHINKAICHI_CHECK -> checkShinkaichi(state, e.at)
         AlarmKind.KITA_CHECK -> checkKita(state, e.at)
+    }
+
+    /** 出発の15分前のお知らせ（帰る段取り） */
+    private fun departReminder(state: TripState): Transition {
+        val dep = state.sanyoDep?.let { ServiceTime(it) }
+        val message = buildString {
+            append("あと${settings.departReminderMinutes}分で出発（${dep}発）。帰る準備をしましょう：会計・忘れ物・駅へ移動。")
+            state.plan?.let { append("\n$it") }
+        }
+        return Transition(state, listOf(TripAction.Ring(RingKind.DEPART, message)))
     }
 
     private fun ring(state: TripState, kind: AlarmKind): Transition {

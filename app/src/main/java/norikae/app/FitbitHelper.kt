@@ -27,17 +27,24 @@ object FitbitHelper {
     data class AlarmTime(val label: String, val at: ServiceTime)
 
     /** Fitbit Air に入れる時刻：新開地の予告と、北鈴蘭台（鈴蘭台止まりなら鈴蘭台）の予告 */
-    fun times(route: Route, settings: AlarmSettings = AlarmSettings()): List<AlarmTime> =
-        AlarmPlanner.plan(route, settings).mapNotNull {
+    fun times(route: Route, planned: Boolean = false, settings: AlarmSettings = AlarmSettings()): List<AlarmTime> {
+        val reminder = route.sanyo?.takeIf { planned }?.let {
+            AlarmTime("出発15分前", it.dep - settings.departReminderMinutes)
+        }
+        return listOfNotNull(reminder) + AlarmPlanner.plan(route, settings).mapNotNull {
             when (it.kind) {
                 AlarmKind.SHINKAICHI_PRE -> AlarmTime("新開地の前", it.at)
                 AlarmKind.KITA_PRE -> AlarmTime("${route.alightStation}の前", it.at)
                 else -> null
             }
         }
+    }
 
     /** 乗車中の状態から（予定と違う電車に乗ったあとも、今の予定で出す） */
     fun times(state: TripState, settings: AlarmSettings = AlarmSettings()): List<AlarmTime> = buildList {
+        if (state.phase == norikae.core.Phase.PLANNED) {
+            state.sanyoDep?.let { add(AlarmTime("出発15分前", ServiceTime(it - settings.departReminderMinutes))) }
+        }
         state.shinkaichiArr?.let {
             val pre = if (state.umedaRisk) settings.shinkaichiPreMinutesUmedaRisk else settings.shinkaichiPreMinutes
             add(AlarmTime("新開地の前", ServiceTime(it - pre)))
@@ -48,9 +55,9 @@ object FitbitHelper {
     fun describe(times: List<AlarmTime>) = times.joinToString("、") { "${it.at.toClock()}（${it.label}）" }
 
     /** アラームを設定したときに出す通知 */
-    fun notify(ctx: Context, route: Route) {
+    fun notify(ctx: Context, route: Route, planned: Boolean = false) {
         if (!Store.fitbitHelperEnabled(ctx)) return
-        val times = times(route)
+        val times = times(route, planned)
         if (times.isEmpty()) return
         Notifier.ensureChannel(ctx)
         val text = "Google Health アプリで Fitbit Air に1回だけの振動アラームを入れてください：${describe(times)}"

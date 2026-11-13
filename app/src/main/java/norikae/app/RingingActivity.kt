@@ -38,6 +38,8 @@ class RingingActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         read(intent)
+        // 乗車中・出発前のお知らせのときは、位置の取得を確実に始める（画面が出ている今なら「使用中のみ許可」でも始められる）
+        if (TripController.isActive(this)) TripService.start(this, fromForeground = true)
         setContent {
             MaterialTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.errorContainer) {
@@ -66,15 +68,18 @@ class RingingActivity : ComponentActivity() {
                                 modifier = Modifier.fillMaxWidth().height(64.dp),
                             ) { Text("新開地で乗り換え中（乗り過ごしていない）", fontSize = 18.sp) }
                         }
-                        OutlinedButton(
-                            onClick = {
-                                val (_, time) = TripController.now()
-                                TripController.handle(this@RingingActivity, TripEvent.UserFinished(time))
-                                Ringer.stop(this@RingingActivity)
-                                finish()
-                            },
-                            modifier = Modifier.fillMaxWidth().height(64.dp),
-                        ) { Text("北鈴蘭台で降りた（終了）", fontSize = 18.sp) }
+                        // 出発前のお知らせ（予定）のときは出さない（押すと予定ごと終わってしまうため）
+                        if (Store.trip(this@RingingActivity)?.phase != Phase.PLANNED) {
+                            OutlinedButton(
+                                onClick = {
+                                    val (_, time) = TripController.now()
+                                    TripController.handle(this@RingingActivity, TripEvent.UserFinished(time))
+                                    Ringer.stop(this@RingingActivity)
+                                    finish()
+                                },
+                                modifier = Modifier.fillMaxWidth().height(64.dp),
+                            ) { Text("北鈴蘭台で降りた（終了）", fontSize = 18.sp) }
+                        }
                     }
                 }
             }

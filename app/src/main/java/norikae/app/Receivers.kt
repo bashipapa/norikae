@@ -37,6 +37,10 @@ class AlarmReceiver : BroadcastReceiver() {
         val kind = intent.getStringExtra(AlarmScheduler.EXTRA_KIND)?.let { AlarmKind.valueOf(it) } ?: return
         val (_, time) = TripController.now()
         TripController.handle(context, TripEvent.AlarmFired(kind, time))
+        // 出発15分前から位置の取得を始める（「常に許可」が無ければ、アプリを開いたときに始まる）
+        if (kind == AlarmKind.DEPART_REMINDER && TripController.isActive(context)) {
+            TripService.start(context, fromForeground = false)
+        }
     }
 }
 
