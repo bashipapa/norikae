@@ -99,7 +99,7 @@ sealed interface TripAction {
     /** アラームを鳴らす */
     /**
      * アラームを鳴らす。[level] 0=振動だけ（音なし）、1=通常のアラーム音、2以上=サイレン（音を出すときは音量最大。どれも強い振動）。
-     * 新開地に着くまでの起こし（出発前のお知らせ・新開地の予告・起こし直し・本アラーム）は振動だけ。
+     * 出発前のお知らせ・新開地の予告・起こし直しは振動だけ。新開地の本アラームからは音あり。
      * サイレンは、乗り過ごし警報が [TripEngine.SIREN_AFTER_RINGS] 回を超えても乗ったままのときだけ。
      */
     data class Ring(val kind: RingKind, val message: String, val level: Int = 1) : TripAction
@@ -451,8 +451,9 @@ class TripEngine(
             AlarmKind.KITA_MAIN -> if (state.taxi) "次は終点の鈴蘭台。降りてください" else "次は北鈴蘭台。降りてください"
             else -> ""
         }
-        // 新開地に着くまで（新開地の予告・起こし直し・本アラーム）は振動だけ。北鈴蘭台は音あり（音量最大・強い振動）
-        val actions = mutableListOf<TripAction>(TripAction.Ring(RingKind.WAKE, message, if (shinkaichi) VIBRATE_ONLY else 1))
+        // 新開地の予告・起こし直しは振動だけ。新開地の本アラームと北鈴蘭台は音あり（音量最大・強い振動）
+        val level = if (shinkaichi && kind != AlarmKind.SHINKAICHI_MAIN) VIBRATE_ONLY else 1
+        val actions = mutableListOf<TripAction>(TripAction.Ring(RingKind.WAKE, message, level))
         // 予告・起こし直しのあと、本アラームの1分前まで1分おきに起こし直す（「起きた」を押せば止まる）
         val repeatKind = if (shinkaichi) AlarmKind.WAKE_REPEAT_SHINKAICHI else AlarmKind.WAKE_REPEAT_KITA
         val next = at + 1

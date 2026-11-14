@@ -462,16 +462,17 @@ class WakeEscalationTest {
         s = engine.reduce(s, TripEvent.UserAwake(t("22:46"))).state
         val tr = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.WAKE_REPEAT_SHINKAICHI, t("22:47")))
         assertTrue(tr.actions.isEmpty(), "起きたを押したら起こし直さない")
-        // 本アラームは鳴る（振動だけ）
+        // 本アラームは鳴る（アラーム音）
         val main = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.SHINKAICHI_MAIN, t("22:53")))
-        assertEquals(0, main.actions.filterIsInstance<TripAction.Ring>().single().level)
+        assertEquals(1, main.actions.filterIsInstance<TripAction.Ring>().single().level)
     }
 
     @Test
-    fun shinkaichiMainIsVibrationOnlyButKitaHasSound() {
+    fun shinkaichiMainAndKitaHaveSound() {
         val s = started()
+        // 新開地の本アラームはアラーム音
         val main = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.SHINKAICHI_MAIN, t("22:53")))
-        assertEquals(0, main.actions.filterIsInstance<TripAction.Ring>().single().level)
+        assertEquals(1, main.actions.filterIsInstance<TripAction.Ring>().single().level)
         // 新開地に着いてからの北鈴蘭台の予告は音あり
         var k = engine.reduce(s, TripEvent.LocationChanged(tt.stations.getValue(StationId.SHINKAICHI), t("22:55"))).state
         k = engine.reduce(k, TripEvent.AlarmFired(AlarmKind.SHINKAICHI_CHECK, t("22:56"))).state
