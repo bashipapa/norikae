@@ -18,7 +18,7 @@ import kotlin.math.sin
 /**
  * アラームの音と振動をアプリ自身で出す（Google の時計アプリと同じ考え方）。
  * - 鳴っている間はアラーム音量を最大にし、止めたら元の音量に戻す
- * - level 1：端末の既定のアラーム音、level 2以上：サイレン（2つの高さの音を交互に）
+ * - level 0：振動だけ（新開地に着くまでの起こし）、level 1：端末の既定のアラーム音、level 2以上：サイレン（2つの高さの音を交互に）
  * - 最大の強さの振動を途切れず続ける
  * 音も振動も「アラーム」の用途で出すので、通知のクールダウンや通知の音の設定の影響を受けにくい。
  */
@@ -35,8 +35,10 @@ object AlarmPlayer {
 
     @Synchronized
     fun start(ctx: Context, level: Int) {
-        maxVolume(ctx)
         vibrate(ctx)
+        // level 0 は振動だけ（新開地に着くまでの起こし）。音量も変えない
+        if (level <= 0) return
+        maxVolume(ctx)
         // すでに同じ強さ以上で鳴っていれば鳴らし直さない（1分おきの再鳴動で音が途切れないように）
         if (playingLevel >= level && (player != null || siren != null)) return
         stopSound()

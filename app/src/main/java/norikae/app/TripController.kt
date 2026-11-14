@@ -193,7 +193,7 @@ object TripController {
                 is TripAction.Schedule -> TripLog.add(ctx, TripLog.Category.ALARM, "予約：" + action.alarms.joinToString("、") { "${alarmLabel(it.kind)} ${it.at}" })
                 is TripAction.Ring -> TripLog.add(
                     ctx, TripLog.Category.RING,
-                    "${ringLabel(action.kind)}（${if (action.level >= 2) "サイレン" else "アラーム音"}・音量最大）：${action.message}",
+                    "${ringLabel(action.kind)}（${when { action.level >= 2 -> "サイレン・音量最大"; action.level >= 1 -> "アラーム音・音量最大"; else -> "振動だけ" }}）：${action.message}",
                 )
                 is TripAction.Notify -> TripLog.add(ctx, TripLog.Category.NOTICE, action.message)
                 TripAction.End -> TripLog.add(ctx, TripLog.Category.STATE, "乗車終了")

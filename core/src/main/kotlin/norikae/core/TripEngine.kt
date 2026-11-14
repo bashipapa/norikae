@@ -98,7 +98,8 @@ sealed interface TripAction {
     data class Cancel(val kinds: Set<AlarmKind>) : TripAction
     /** アラームを鳴らす */
     /**
-     * アラームを鳴らす。[level] 1=通常のアラーム音、2以上=サイレン（音量はいつも最大・強い振動）。
+     * アラームを鳴らす。[level] 0=振動だけ（音なし）、1=通常のアラーム音、2以上=サイレン（音を出すときは音量最大。どれも強い振動）。
+     * 新開地に着くまでの起こし（出発前のお知らせ・新開地の予告・起こし直し・本アラーム）は振動だけ。
      * サイレンは、乗り過ごし警報が [TripEngine.SIREN_AFTER_RINGS] 回を超えても乗ったままのときだけ。
      */
     data class Ring(val kind: RingKind, val message: String, val level: Int = 1) : TripAction
@@ -131,6 +132,8 @@ class TripEngine(
         const val LOCATION_FRESH_MIN = 3
         /** 到着のこの分数前より後に「起きた」を押していれば、その駅の起こし直しは止める */
         const val WAKE_WINDOW_MIN = 10
+        /** 振動だけ（音なし）。新開地に着くまでの起こしに使う */
+        const val VIBRATE_ONLY = 0
         /** 乗り過ごし警報がこの回数を超えたら（11回目から）サイレンにする */
         const val SIREN_AFTER_RINGS = 10
         /** サイレンの強さ */
@@ -406,7 +409,8 @@ class TripEngine(
             append("あと${settings.departReminderMinutes}分で出発（${dep}発）。帰る準備をしましょう：会計・忘れ物・駅へ移動。")
             state.plan?.let { append("\n$it") }
         }
-        return Transition(state, listOf(TripAction.Ring(RingKind.DEPART, message)))
+        // 新開地に着くまでは振動だけ
+        return Transition(state, listOf(TripAction.Ring(RingKind.DEPART, message, VIBRATE_ONLY)))
     }
 
     /** 乗り過ごし警報の [rings] 回目の強さ：10回を超えたらサイレン、それまではアラーム音 */
@@ -447,8 +451,8 @@ class TripEngine(
             AlarmKind.KITA_MAIN -> if (state.taxi) "次は終点の鈴蘭台。降りてください" else "次は北鈴蘭台。降りてください"
             else -> ""
         }
-        // 予告・起こし直し・本アラームは通常のアラーム音（音量最大・強い振動）
-        val actions = mutableListOf<TripAction>(TripAction.Ring(RingKind.WAKE, message, 1))
+        // 新開地に着くまで（新開地の予告・起こし直し・本アラーム）は振動だけ。北鈴蘭台は音あり（音量最大・強い振動）
+        val actions = mutableListOf<TripAction>(TripAction.Ring(RingKind.WAKE, message, if (shinkaichi) VIBRATE_ONLY else 1))
         // 予告・起こし直しのあと、本アラームの1分前まで1分おきに起こし直す（「起きた」を押せば止まる）
         val repeatKind = if (shinkaichi) AlarmKind.WAKE_REPEAT_SHINKAICHI else AlarmKind.WAKE_REPEAT_KITA
         val next = at + 1

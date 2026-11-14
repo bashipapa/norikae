@@ -386,6 +386,7 @@ class PlannedTripTest {
         val tr = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.DEPART_REMINDER, t("21:17")))
         val ring = tr.actions.filterIsInstance<TripAction.Ring>().single()
         assertEquals(RingKind.DEPART, ring.kind)
+        assertEquals(0, ring.level, "出発前のお知らせは振動だけ")
         assertTrue(ring.message.contains("あと15分") && ring.message.contains("21:32発"), ring.message)
         assertTrue(ring.message.contains("北鈴蘭台 23:15着"), ring.message)
         assertEquals(Phase.PLANNED, tr.state.phase)
@@ -440,7 +441,7 @@ class WakeEscalationTest {
         var s = started()
         // 予告 22:46（8分前）→ 22:47〜22:52 に1分おきに起こし直し、22:53 は本アラーム
         var tr = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.SHINKAICHI_PRE, t("22:46")))
-        assertEquals(1, tr.actions.filterIsInstance<TripAction.Ring>().single().level)
+        assertEquals(0, tr.actions.filterIsInstance<TripAction.Ring>().single().level, "新開地に着くまでは振動だけ")
         val times = mutableListOf<String>()
         while (true) {
             val next = tr.actions.filterIsInstance<TripAction.Schedule>().firstOrNull()?.alarms?.single() ?: break
@@ -448,7 +449,7 @@ class WakeEscalationTest {
             times += next.at.toString()
             tr = engine.reduce(tr.state, TripEvent.AlarmFired(next.kind, next.at))
             val ring = tr.actions.filterIsInstance<TripAction.Ring>().single()
-            assertEquals(1, ring.level, "起こし直しは通常のアラーム音")
+            assertEquals(0, ring.level, "新開地に着くまでの起こし直しは振動だけ")
             assertTrue(ring.message.contains("あと"), ring.message)
         }
         assertEquals(listOf("22:47", "22:48", "22:49", "22:50", "22:51", "22:52"), times)
@@ -461,16 +462,21 @@ class WakeEscalationTest {
         s = engine.reduce(s, TripEvent.UserAwake(t("22:46"))).state
         val tr = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.WAKE_REPEAT_SHINKAICHI, t("22:47")))
         assertTrue(tr.actions.isEmpty(), "起きたを押したら起こし直さない")
-        // 本アラームは鳴る
+        // 本アラームは鳴る（振動だけ）
         val main = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.SHINKAICHI_MAIN, t("22:53")))
-        assertEquals(1, main.actions.filterIsInstance<TripAction.Ring>().single().level)
+        assertEquals(0, main.actions.filterIsInstance<TripAction.Ring>().single().level)
     }
 
     @Test
-    fun mainAlarmIsNormalTone() {
+    fun shinkaichiMainIsVibrationOnlyButKitaHasSound() {
         val s = started()
         val main = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.SHINKAICHI_MAIN, t("22:53")))
-        assertEquals(1, main.actions.filterIsInstance<TripAction.Ring>().single().level)
+        assertEquals(0, main.actions.filterIsInstance<TripAction.Ring>().single().level)
+        // 新開地に着いてからの北鈴蘭台の予告は音あり
+        var k = engine.reduce(s, TripEvent.LocationChanged(tt.stations.getValue(StationId.SHINKAICHI), t("22:55"))).state
+        k = engine.reduce(k, TripEvent.AlarmFired(AlarmKind.SHINKAICHI_CHECK, t("22:56"))).state
+        val kitaPre = engine.reduce(k, TripEvent.AlarmFired(AlarmKind.KITA_PRE, t("23:10")))
+        assertEquals(1, kitaPre.actions.filterIsInstance<TripAction.Ring>().single().level)
     }
 
     @Test
