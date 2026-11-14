@@ -448,7 +448,7 @@ class WakeEscalationTest {
             times += next.at.toString()
             tr = engine.reduce(tr.state, TripEvent.AlarmFired(next.kind, next.at))
             val ring = tr.actions.filterIsInstance<TripAction.Ring>().single()
-            assertEquals(2, ring.level, "起こし直しはサイレン")
+            assertEquals(1, ring.level, "起こし直しは通常のアラーム音")
             assertTrue(ring.message.contains("あと"), ring.message)
         }
         assertEquals(listOf("22:47", "22:48", "22:49", "22:50", "22:51", "22:52"), times)
@@ -461,23 +461,33 @@ class WakeEscalationTest {
         s = engine.reduce(s, TripEvent.UserAwake(t("22:46"))).state
         val tr = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.WAKE_REPEAT_SHINKAICHI, t("22:47")))
         assertTrue(tr.actions.isEmpty(), "起きたを押したら起こし直さない")
-        // 本アラームは鳴るが、起きているので通常の音
+        // 本アラームは鳴る
         val main = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.SHINKAICHI_MAIN, t("22:53")))
         assertEquals(1, main.actions.filterIsInstance<TripAction.Ring>().single().level)
     }
 
     @Test
-    fun mainAlarmIsSirenIfNotAwake() {
+    fun mainAlarmIsNormalTone() {
         val s = started()
         val main = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.SHINKAICHI_MAIN, t("22:53")))
-        assertEquals(2, main.actions.filterIsInstance<TripAction.Ring>().single().level)
+        assertEquals(1, main.actions.filterIsInstance<TripAction.Ring>().single().level)
     }
 
     @Test
-    fun overshootIsStrongestSiren() {
-        val s = started()
-        val tr = engine.reduce(s, TripEvent.LocationChanged(tt.stations.getValue(StationId.KOSOKU_KOBE), t("22:56")))
-        assertEquals(3, tr.actions.filterIsInstance<TripAction.Ring>().single().level)
+    fun sirenOnlyAfterTenOvershootRings() {
+        var s = started()
+        // 乗り過ごし1回目（高速神戸側の位置）はアラーム音
+        var tr = engine.reduce(s, TripEvent.LocationChanged(tt.stations.getValue(StationId.KOSOKU_KOBE), t("22:56")))
+        val levels = mutableListOf(tr.actions.filterIsInstance<TripAction.Ring>().single().level)
+        s = tr.state
+        // そのあと1分おきに鳴らし続ける（位置なし＝乗ったまま）
+        for (i in 1..12) {
+            tr = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.SHINKAICHI_CHECK, t("22:56") + i))
+            levels += tr.actions.filterIsInstance<TripAction.Ring>().single().level
+            s = tr.state
+        }
+        // 1〜10回目はアラーム音、11回目からサイレン
+        assertEquals(List(10) { 1 } + List(3) { 3 }, levels)
     }
 
     @Test
@@ -490,6 +500,6 @@ class WakeEscalationTest {
         s = engine.reduce(s, TripEvent.MotionChanged(Motion.IN_VEHICLE, t("22:58"))).state
         val pre = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.KITA_PRE, t("23:10")))
         val rep = engine.reduce(pre.state, TripEvent.AlarmFired(AlarmKind.WAKE_REPEAT_KITA, t("23:11")))
-        assertEquals(2, rep.actions.filterIsInstance<TripAction.Ring>().single().level)
+        assertTrue(rep.actions.any { it is TripAction.Ring }, "北鈴蘭台の前はまた起こし直す")
     }
 }

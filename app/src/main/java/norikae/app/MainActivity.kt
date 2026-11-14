@@ -687,7 +687,7 @@ class MainActivity : ComponentActivity() {
                     }) { Text("今すぐ鳴らす") }
                     OutlinedButton(onClick = {
                         TripLog.add(ctx, TripLog.Category.RING, "アラームのテスト（サイレン）を鳴らした")
-                        Ringer.ring(ctx, RingKind.OVERSHOT_SHINKAICHI, "サイレンのテストです。乗り過ごしたときはこの音で鳴ります", level = 3)
+                        Ringer.ring(ctx, RingKind.OVERSHOT_SHINKAICHI, "サイレンのテストです。乗り過ごし警報が10回を超えても止まらないときは、この音で鳴ります", level = 3)
                     }) { Text("サイレン") }
                     Button(onClick = {
                         AlarmScheduler.scheduleTest(ctx, 60)
