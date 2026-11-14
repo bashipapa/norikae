@@ -422,3 +422,74 @@ class PlannedTripTest {
         assertEquals(s, TripState.fromJson(s.toJson()))
     }
 }
+
+/** 起こし方を強くする（2026-11-13 に起きられなかった件） */
+class WakeEscalationTest {
+    private val tt = loadRealTimetable()
+    private val engine = TripEngine(RoutePlanner(tt), StationLocations(tt.stations))
+
+    /** 当日の経路：明石 22:31 直通特急 → 新開地 22:54着 → 22:57 三田行き → 北鈴蘭台 23:15着 */
+    private fun started(): TripState {
+        val r = RoutePlanner(tt).plan(t("22:30"), Origin.AKASHI) { it.type.isLimited }.first()
+        assertEquals("22:31", r.sanyo!!.dep.toString())
+        return engine.start(r, "2026-11-13").state
+    }
+
+    @Test
+    fun preAlarmRepeatsEveryMinuteUntilMain() {
+        var s = started()
+        // 予告 22:46（8分前）→ 22:47〜22:52 に1分おきに起こし直し、22:53 は本アラーム
+        var tr = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.SHINKAICHI_PRE, t("22:46")))
+        assertEquals(1, tr.actions.filterIsInstance<TripAction.Ring>().single().level)
+        val times = mutableListOf<String>()
+        while (true) {
+            val next = tr.actions.filterIsInstance<TripAction.Schedule>().firstOrNull()?.alarms?.single() ?: break
+            assertEquals(AlarmKind.WAKE_REPEAT_SHINKAICHI, next.kind)
+            times += next.at.toString()
+            tr = engine.reduce(tr.state, TripEvent.AlarmFired(next.kind, next.at))
+            val ring = tr.actions.filterIsInstance<TripAction.Ring>().single()
+            assertEquals(2, ring.level, "起こし直しはサイレン")
+            assertTrue(ring.message.contains("あと"), ring.message)
+        }
+        assertEquals(listOf("22:47", "22:48", "22:49", "22:50", "22:51", "22:52"), times)
+    }
+
+    @Test
+    fun pressingAwakeStopsRepeats() {
+        var s = started()
+        s = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.SHINKAICHI_PRE, t("22:46"))).state
+        s = engine.reduce(s, TripEvent.UserAwake(t("22:46"))).state
+        val tr = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.WAKE_REPEAT_SHINKAICHI, t("22:47")))
+        assertTrue(tr.actions.isEmpty(), "起きたを押したら起こし直さない")
+        // 本アラームは鳴るが、起きているので通常の音
+        val main = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.SHINKAICHI_MAIN, t("22:53")))
+        assertEquals(1, main.actions.filterIsInstance<TripAction.Ring>().single().level)
+    }
+
+    @Test
+    fun mainAlarmIsSirenIfNotAwake() {
+        val s = started()
+        val main = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.SHINKAICHI_MAIN, t("22:53")))
+        assertEquals(2, main.actions.filterIsInstance<TripAction.Ring>().single().level)
+    }
+
+    @Test
+    fun overshootIsStrongestSiren() {
+        val s = started()
+        val tr = engine.reduce(s, TripEvent.LocationChanged(tt.stations.getValue(StationId.KOSOKU_KOBE), t("22:56")))
+        assertEquals(3, tr.actions.filterIsInstance<TripAction.Ring>().single().level)
+    }
+
+    @Test
+    fun awakeFromEarlierStationDoesNotCountForKita() {
+        var s = started()
+        // 新開地の前に起きた → 北鈴蘭台の予告のあとは、また起こし直す
+        s = engine.reduce(s, TripEvent.UserAwake(t("22:46"))).state
+        s = engine.reduce(s, TripEvent.LocationChanged(tt.stations.getValue(StationId.SHINKAICHI), t("22:55"))).state
+        s = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.SHINKAICHI_CHECK, t("22:56"))).state
+        s = engine.reduce(s, TripEvent.MotionChanged(Motion.IN_VEHICLE, t("22:58"))).state
+        val pre = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.KITA_PRE, t("23:10")))
+        val rep = engine.reduce(pre.state, TripEvent.AlarmFired(AlarmKind.WAKE_REPEAT_KITA, t("23:11")))
+        assertEquals(2, rep.actions.filterIsInstance<TripAction.Ring>().single().level)
+    }
+}

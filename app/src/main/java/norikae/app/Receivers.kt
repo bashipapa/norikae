@@ -25,6 +25,7 @@ class AlarmReceiver : BroadcastReceiver() {
         when (intent.action) {
             ACTION_STOP_RINGING -> {
                 TripLog.add(context, TripLog.Category.USER, "通知の「止める」を押した")
+                TripController.handle(context, TripEvent.UserAwake(TripController.now().second))
                 Ringer.stop(context)
                 return
             }

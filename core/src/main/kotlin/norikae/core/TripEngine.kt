@@ -52,6 +52,8 @@ data class TripState(
     val sanyoDep: Int? = null,
     /** 帰り道の説明（出発前のお知らせに出す） */
     val plan: String? = null,
+    /** 最後に「起きた（止める）」を押した時刻（営業日基準の分）。予告のあとの起こし直しを止めるのに使う */
+    val awakeAt: Int? = null,
     val lastMotion: Motion? = null,
     val lastLat: Double? = null,
     val lastLon: Double? = null,
@@ -81,6 +83,8 @@ sealed interface TripEvent {
     data class MotionChanged(val motion: Motion, override val at: ServiceTime) : TripEvent
     data class LocationChanged(val location: LatLon, override val at: ServiceTime) : TripEvent
     data class AlarmFired(val kind: AlarmKind, override val at: ServiceTime) : TripEvent
+    /** ユーザーが「起きた（止める）」を押した */
+    data class UserAwake(override val at: ServiceTime) : TripEvent
     /** ユーザーが「新開地で乗り換え中」を押した（乗り過ごしの誤判定を直す） */
     data class UserTransferring(override val at: ServiceTime) : TripEvent
     /** ユーザーが「降りた」「終了」を押した */
@@ -93,7 +97,10 @@ sealed interface TripAction {
     /** これらの種類のアラーム予約を取り消す */
     data class Cancel(val kinds: Set<AlarmKind>) : TripAction
     /** アラームを鳴らす */
-    data class Ring(val kind: RingKind, val message: String) : TripAction
+    /**
+     * アラームを鳴らす。[level] 1=通常のアラーム音、2以上=サイレン（音量はいつも最大・強い振動）
+     */
+    data class Ring(val kind: RingKind, val message: String, val level: Int = 1) : TripAction
     /** 鳴っているアラームを止める */
     data object StopRinging : TripAction
     /** 通知だけ出す（鳴らさない） */
@@ -121,6 +128,11 @@ class TripEngine(
         const val AT_STATION_RADIUS_M = 250.0
         /** この分数より古い位置は判定に使わない */
         const val LOCATION_FRESH_MIN = 3
+        /** 到着のこの分数前より後に「起きた」を押していれば、その駅の起こし直しは止める */
+        const val WAKE_WINDOW_MIN = 10
+        /** 乗り過ごし・電車違いの警報の強さ（サイレン） */
+        const val ALERT_LEVEL = 3
+
         /** この距離以内なら「同じ場所にとどまっている」 */
         const val STAY_RADIUS_M = 150.0
 
@@ -191,6 +203,7 @@ class TripEngine(
 
     fun reduce(original: TripState, event: TripEvent): Transition {
         if (original.phase == Phase.DONE) return Transition(original, emptyList())
+        if (event is TripEvent.UserAwake) return Transition(original.copy(awakeAt = event.at.minutes), emptyList())
         // 予定（乗る前）は、出発の1分前を過ぎたら自動で乗車中にする
         val state = if (original.phase == Phase.PLANNED &&
             (original.sanyoDep == null || event.at.minutes >= original.sanyoDep - 1)
@@ -216,6 +229,7 @@ class TripEngine(
             is TripEvent.AlarmFired -> onAlarm(state, event)
             is TripEvent.UserFinished -> done(state, "終了しました")
             is TripEvent.UserTransferring -> toTransferring(state, "乗り換え中にしました")
+            is TripEvent.UserAwake -> Transition(state, emptyList())
         }
     }
 
@@ -304,7 +318,7 @@ class TripEngine(
         if (!train.reachesKitaSuzurandai) {
             return Transition(
                 next.copy(wrongLineWarned = true),
-                listOf(TripAction.Ring(RingKind.WRONG_LINE, "${train.dep} ${train.dest}行きに乗っている可能性があります。この電車は北鈴蘭台に止まりません")),
+                listOf(TripAction.Ring(RingKind.WRONG_LINE, "${train.dep} ${train.dest}行きに乗っている可能性があります。この電車は北鈴蘭台に止まりません", ALERT_LEVEL)),
             )
         }
         if (train.dep.minutes == state.shintetsuDep) return Transition(next, emptyList())
@@ -353,7 +367,7 @@ class TripEngine(
         ) {
             return Transition(
                 state.copy(wrongLineWarned = true),
-                listOf(TripAction.Ring(RingKind.WRONG_LINE, "粟生線（鈴蘭台西口方面）を走っています。北鈴蘭台に行きません。鈴蘭台に戻ってください")),
+                listOf(TripAction.Ring(RingKind.WRONG_LINE, "粟生線（鈴蘭台西口方面）を走っています。北鈴蘭台に行きません。鈴蘭台に戻ってください", ALERT_LEVEL)),
             )
         }
         if (!state.taxi && stations.isNear(StationId.YAMANOMACHI, e.location, YAMANOMACHI_RADIUS_M) == true) {
@@ -365,14 +379,14 @@ class TripEngine(
     // ---- 予約したアラームの時刻になった ----
 
     private fun onAlarm(state: TripState, e: TripEvent.AlarmFired): Transition = when (e.kind) {
-        AlarmKind.SHINKAICHI_PRE, AlarmKind.SHINKAICHI_MAIN ->
-            if (state.phase == Phase.RIDING_SANYO) ring(state, e.kind) else Transition(state, emptyList())
+        AlarmKind.SHINKAICHI_PRE, AlarmKind.SHINKAICHI_MAIN, AlarmKind.WAKE_REPEAT_SHINKAICHI ->
+            if (state.phase == Phase.RIDING_SANYO) ring(state, e.kind, e.at) else Transition(state, emptyList())
 
-        AlarmKind.KITA_PRE, AlarmKind.KITA_MAIN ->
+        AlarmKind.KITA_PRE, AlarmKind.KITA_MAIN, AlarmKind.WAKE_REPEAT_KITA ->
             if (state.phase == Phase.RIDING_SHINTETSU || state.phase == Phase.TRANSFERRING ||
                 state.phase == Phase.OVERSHOT_SHINKAICHI
             ) {
-                ring(state, e.kind)
+                ring(state, e.kind, e.at)
             } else {
                 Transition(state, emptyList())
             }
@@ -392,8 +406,26 @@ class TripEngine(
         return Transition(state, listOf(TripAction.Ring(RingKind.DEPART, message)))
     }
 
-    private fun ring(state: TripState, kind: AlarmKind): Transition {
+    /** 到着 [arr] の前の起こしで、もう「起きた」を押しているか（予告より前に押したものは数えない） */
+    private fun awakeFor(state: TripState, arr: Int?): Boolean {
+        val awake = state.awakeAt ?: return false
+        return arr != null && awake >= arr - WAKE_WINDOW_MIN
+    }
+
+    private fun ring(state: TripState, kind: AlarmKind, at: ServiceTime): Transition {
+        val shinkaichi = kind == AlarmKind.SHINKAICHI_PRE || kind == AlarmKind.SHINKAICHI_MAIN ||
+            kind == AlarmKind.WAKE_REPEAT_SHINKAICHI
+        val arr = if (shinkaichi) state.shinkaichiArr else state.kitaArr
+        val awake = awakeFor(state, arr)
+        val isRepeat = kind == AlarmKind.WAKE_REPEAT_SHINKAICHI || kind == AlarmKind.WAKE_REPEAT_KITA
+        // 起こし直しは「起きた」を押していたら鳴らさない
+        if (isRepeat && awake) return Transition(state, emptyList())
+        val left = arr?.let { it - at.minutes }
         val message = when (kind) {
+            AlarmKind.WAKE_REPEAT_SHINKAICHI ->
+                "起きて！あと${left}分で新開地" + if (state.umedaRisk) "（乗り過ごすと梅田まで行きます）" else ""
+            AlarmKind.WAKE_REPEAT_KITA ->
+                "起きて！あと${left}分で" + if (state.taxi) "終点の鈴蘭台" else "北鈴蘭台"
             AlarmKind.SHINKAICHI_PRE ->
                 "まもなく新開地。起きてください" + if (state.umedaRisk) "（乗り過ごすと梅田まで行きます）" else ""
             AlarmKind.SHINKAICHI_MAIN -> {
@@ -409,7 +441,22 @@ class TripEngine(
             AlarmKind.KITA_MAIN -> if (state.taxi) "次は終点の鈴蘭台。降りてください" else "次は北鈴蘭台。降りてください"
             else -> ""
         }
-        return Transition(state, listOf(TripAction.Ring(RingKind.WAKE, message)))
+        // だんだん強く：予告は通常の音、起こし直しと本アラームは（起きていなければ）サイレン
+        val level = when {
+            kind == AlarmKind.SHINKAICHI_PRE || kind == AlarmKind.KITA_PRE -> 1
+            awake -> 1
+            else -> 2
+        }
+        val actions = mutableListOf<TripAction>(TripAction.Ring(RingKind.WAKE, message, level))
+        // 予告・起こし直しのあと、本アラームの1分前まで1分おきに起こし直す（「起きた」を押せば止まる）
+        val repeatKind = if (shinkaichi) AlarmKind.WAKE_REPEAT_SHINKAICHI else AlarmKind.WAKE_REPEAT_KITA
+        val next = at + 1
+        if ((kind == AlarmKind.SHINKAICHI_PRE || kind == AlarmKind.KITA_PRE || isRepeat) &&
+            arr != null && next.minutes < arr - settings.mainMinutes
+        ) {
+            actions += TripAction.Schedule(listOf(PlannedAlarm(repeatKind, next, "")))
+        }
+        return Transition(state, actions)
     }
 
     private fun checkShinkaichi(state: TripState, t: ServiceTime): Transition {
@@ -439,6 +486,7 @@ class TripEngine(
                 RingKind.OVERSHOT_SHINKAICHI,
                 "新開地を過ぎています！次の駅で降りて、反対方向の電車で新開地へ戻ってください" +
                     if (state.umedaRisk) "（このままだと梅田まで行きます）" else "",
+                ALERT_LEVEL,
             ),
         )
         if (rings < settings.maxOvershootRings) {
@@ -486,7 +534,7 @@ class TripEngine(
         if (state.kitaRings >= settings.maxOvershootRings) return Transition(state, emptyList())
         val rings = state.kitaRings + 1
         val actions = mutableListOf<TripAction>(
-            TripAction.Ring(RingKind.WAKE, "終点の鈴蘭台です！起きて降りてください（鈴蘭台からタクシー）"),
+            TripAction.Ring(RingKind.WAKE, "終点の鈴蘭台です！起きて降りてください（鈴蘭台からタクシー）", ALERT_LEVEL),
         )
         if (rings < settings.maxOvershootRings) {
             actions += TripAction.Schedule(listOf(PlannedAlarm(AlarmKind.KITA_CHECK, t + 1, "")))
@@ -498,7 +546,7 @@ class TripEngine(
         if (state.kitaRings >= settings.maxOvershootRings) return Transition(state, emptyList())
         val rings = state.kitaRings + 1
         val actions = mutableListOf<TripAction>(
-            TripAction.Ring(RingKind.OVERSHOT_KITA, "北鈴蘭台を過ぎた可能性があります！次の駅で降りてください。${returnGuidance(state, t)}"),
+            TripAction.Ring(RingKind.OVERSHOT_KITA, "北鈴蘭台を過ぎた可能性があります！次の駅で降りてください。${returnGuidance(state, t)}", ALERT_LEVEL),
         )
         if (rings < settings.maxOvershootRings) {
             actions += TripAction.Schedule(listOf(PlannedAlarm(AlarmKind.KITA_CHECK, t + 1, "")))

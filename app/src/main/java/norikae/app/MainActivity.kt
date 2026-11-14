@@ -672,18 +672,23 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    @OptIn(ExperimentalLayoutApi::class)
     @Composable
     private fun AlarmTestCard() {
         val ctx = this
         Card {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("アラームのテスト", fontWeight = FontWeight.Bold)
-                Text("本番と同じ鳴らし方（アラーム音・バイブ・ロック画面に全画面表示）で鳴らします。音量は「アラーム音量」に従います", fontSize = 12.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("本番と同じ鳴らし方で鳴らします。鳴っている間はアラーム音量を最大にし、強い振動を続けます（止めると音量は元に戻ります）", fontSize = 12.sp)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = {
                         TripLog.add(ctx, TripLog.Category.RING, "アラームのテスト（今すぐ）を鳴らした")
                         Ringer.ring(ctx, RingKind.WAKE, "アラームのテストです。「起きた（止める）」で止まります")
                     }) { Text("今すぐ鳴らす") }
+                    OutlinedButton(onClick = {
+                        TripLog.add(ctx, TripLog.Category.RING, "アラームのテスト（サイレン）を鳴らした")
+                        Ringer.ring(ctx, RingKind.OVERSHOT_SHINKAICHI, "サイレンのテストです。乗り過ごしたときはこの音で鳴ります", level = 3)
+                    }) { Text("サイレン") }
                     Button(onClick = {
                         AlarmScheduler.scheduleTest(ctx, 60)
                         TripLog.add(ctx, TripLog.Category.USER, "アラームのテスト（1分後）を予約した")

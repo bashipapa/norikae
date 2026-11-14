@@ -99,6 +99,7 @@ object TripController {
             is TripEvent.AlarmFired -> TripLog.add(ctx, TripLog.Category.ALARM, "${alarmLabel(event.kind)}の時刻（${event.at}）：${Notifier.phaseLabel(state)}")
             is TripEvent.UserFinished -> TripLog.add(ctx, TripLog.Category.USER, "「降りた／終了」を押した")
             is TripEvent.UserTransferring -> TripLog.add(ctx, TripLog.Category.USER, "「新開地で乗り換え中」を押した")
+            is TripEvent.UserAwake -> Unit // 押した画面・通知の側で記録済み
             is TripEvent.LocationChanged -> {
                 // 位置は20秒ごとに届くので、2分に1回だけ記録する
                 val nowMs = System.currentTimeMillis()
@@ -113,6 +114,8 @@ object TripController {
 
     private fun alarmLabel(kind: AlarmKind) = when (kind) {
         AlarmKind.DEPART_REMINDER -> "出発15分前のお知らせ"
+        AlarmKind.WAKE_REPEAT_SHINKAICHI -> "新開地の起こし直し"
+        AlarmKind.WAKE_REPEAT_KITA -> "北鈴蘭台の起こし直し"
         AlarmKind.SHINKAICHI_PRE -> "新開地の予告"
         AlarmKind.SHINKAICHI_MAIN -> "新開地の本アラーム"
         AlarmKind.SHINKAICHI_CHECK -> "新開地で降りたかの確認"
@@ -188,7 +191,10 @@ object TripController {
         for (action in transition.actions) {
             when (action) {
                 is TripAction.Schedule -> TripLog.add(ctx, TripLog.Category.ALARM, "予約：" + action.alarms.joinToString("、") { "${alarmLabel(it.kind)} ${it.at}" })
-                is TripAction.Ring -> TripLog.add(ctx, TripLog.Category.RING, "${ringLabel(action.kind)}：${action.message}")
+                is TripAction.Ring -> TripLog.add(
+                    ctx, TripLog.Category.RING,
+                    "${ringLabel(action.kind)}（${if (action.level >= 2) "サイレン" else "アラーム音"}・音量最大）：${action.message}",
+                )
                 is TripAction.Notify -> TripLog.add(ctx, TripLog.Category.NOTICE, action.message)
                 TripAction.End -> TripLog.add(ctx, TripLog.Category.STATE, "乗車終了")
                 else -> Unit
@@ -200,7 +206,7 @@ object TripController {
             when (action) {
                 is TripAction.Schedule -> action.alarms.forEach { AlarmScheduler.schedule(ctx, it, serviceDate) }
                 is TripAction.Cancel -> action.kinds.forEach { AlarmScheduler.cancel(ctx, it) }
-                is TripAction.Ring -> Ringer.ring(ctx, action.kind, action.message)
+                is TripAction.Ring -> Ringer.ring(ctx, action.kind, action.message, action.level)
                 TripAction.StopRinging -> Ringer.stop(ctx)
                 is TripAction.Notify -> Notifier.info(ctx, action.message)
                 TripAction.End -> {

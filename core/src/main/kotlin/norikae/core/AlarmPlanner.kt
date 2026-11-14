@@ -14,7 +14,11 @@ enum class AlarmKind {
     /** 北鈴蘭台で降りたかの確認（鳴らさず判定だけ） */
     KITA_CHECK,
     /** 出発の15分前のお知らせ（事前に予定を入れたとき） */
-    DEPART_REMINDER;
+    DEPART_REMINDER,
+    /** 新開地の予告のあと「起きた」が押されるまで、1分おきに起こし直す */
+    WAKE_REPEAT_SHINKAICHI,
+    /** 北鈴蘭台の予告のあと「起きた」が押されるまで、1分おきに起こし直す */
+    WAKE_REPEAT_KITA;
 
     val isCheck: Boolean get() = this == SHINKAICHI_CHECK || this == KITA_CHECK
     val isShinkaichi: Boolean get() = this == SHINKAICHI_PRE || this == SHINKAICHI_MAIN || this == SHINKAICHI_CHECK

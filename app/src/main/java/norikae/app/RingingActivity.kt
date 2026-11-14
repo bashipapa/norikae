@@ -52,6 +52,8 @@ class RingingActivity : ComponentActivity() {
                         Button(
                             onClick = {
                                 TripLog.add(this@RingingActivity, TripLog.Category.USER, "鳴動画面の「起きた（止める）」を押した")
+                                // 起きたことを記録（予告のあとの起こし直しを止める）
+                                TripController.handle(this@RingingActivity, TripEvent.UserAwake(TripController.now().second))
                                 Ringer.stop(this@RingingActivity)
                                 finish()
                             },

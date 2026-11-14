@@ -6,50 +6,49 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.media.AudioAttributes
-import android.media.RingtoneManager
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import norikae.core.RingKind
 import norikae.core.TripState
 import norikae.core.ServiceTime
 
 /**
  * アラームを鳴らす。
- * 「アラーム音のチャンネル + FLAG_INSISTENT（止めるまで鳴り続ける）+ 全画面表示」で、
- * ロック中でも画面を点けて鳴らす。
+ * 音と振動は通知ではなくアプリ自身が出す（AlarmPlayer）。通知のクールダウンや通知の音の設定に左右されないようにするため。
+ * 通知は、ロック中でも画面を点けて鳴動画面を出す（全画面表示）ためだけに使う（通知自体は音も振動も出さない）。
+ * 鳴らしている間は AlarmSoundService（常駐処理）が動き、アプリが止められないようにする。
  */
 object Ringer {
-    private const val CHANNEL_ALARM = "alarm"
-    private const val NOTIFICATION_ID = 1
+    /** 音・振動なしの表示専用チャンネル（以前の "alarm" チャンネルは音付きだったので作り直す） */
+    private const val CHANNEL_ALARM = "alarm_display"
+    private const val OLD_CHANNEL_ALARM = "alarm"
+    const val NOTIFICATION_ID = 1
 
     fun ensureChannel(ctx: Context) {
         val nm = ctx.getSystemService(NotificationManager::class.java)
+        if (nm.getNotificationChannel(OLD_CHANNEL_ALARM) != null) nm.deleteNotificationChannel(OLD_CHANNEL_ALARM)
         if (nm.getNotificationChannel(CHANNEL_ALARM) != null) return
-        val channel = NotificationChannel(CHANNEL_ALARM, "乗り過ごしアラーム", NotificationManager.IMPORTANCE_HIGH).apply {
-            setSound(
-                RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM),
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ALARM)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build(),
-            )
-            enableVibration(true)
-            vibrationPattern = longArrayOf(0, 800, 400, 800, 400, 800)
+        val channel = NotificationChannel(CHANNEL_ALARM, "乗り過ごしアラーム（画面表示）", NotificationManager.IMPORTANCE_HIGH).apply {
+            setSound(null, null)
+            enableVibration(false)
             setBypassDnd(true)
             lockscreenVisibility = Notification.VISIBILITY_PUBLIC
         }
         nm.createNotificationChannel(channel)
     }
 
-    fun ring(ctx: Context, kind: RingKind, message: String) {
+    fun title(kind: RingKind) = when (kind) {
+        RingKind.WAKE -> "起きて！"
+        RingKind.DEPART -> "帰る時間です"
+        RingKind.OVERSHOT_SHINKAICHI -> "新開地を乗り過ごし！"
+        RingKind.OVERSHOT_KITA -> "北鈴蘭台を乗り過ごし！"
+        RingKind.WRONG_LINE -> "電車が違うかも！"
+    }
+
+    /** 全画面の鳴動画面を出す通知（音・振動なし） */
+    fun buildNotification(ctx: Context, kind: RingKind, message: String): Notification {
         ensureChannel(ctx)
-        val title = when (kind) {
-            RingKind.WAKE -> "起きて！"
-            RingKind.DEPART -> "帰る時間です"
-            RingKind.OVERSHOT_SHINKAICHI -> "新開地を乗り過ごし！"
-            RingKind.OVERSHOT_KITA -> "北鈴蘭台を乗り過ごし！"
-            RingKind.WRONG_LINE -> "電車が違うかも！"
-        }
+        val title = title(kind)
         val open = Intent(ctx, RingingActivity::class.java)
             .putExtra(RingingActivity.EXTRA_TITLE, title)
             .putExtra(RingingActivity.EXTRA_MESSAGE, message)
@@ -62,7 +61,7 @@ object Ringer {
             Intent(ctx, AlarmReceiver::class.java).setAction(AlarmReceiver.ACTION_STOP_RINGING),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val notification = NotificationCompat.Builder(ctx, CHANNEL_ALARM)
+        return NotificationCompat.Builder(ctx, CHANNEL_ALARM)
             .setSmallIcon(R.drawable.ic_stat_norikae)
             .setContentTitle(title)
             .setContentText(message)
@@ -74,13 +73,30 @@ object Ringer {
             .addAction(0, "止める", stop)
             .setAutoCancel(false)
             .setOngoing(true)
-            .setTimeoutAfter(5 * 60_000L)
+            .setSilent(true)
             .build()
-            .apply { flags = flags or Notification.FLAG_INSISTENT }
-        runCatching { ctx.getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification) }
+    }
+
+    /**
+     * 鳴らす。[level] 1=アラーム音、2以上=サイレン。どれもアラーム音量を最大にし、強い振動を続ける。
+     */
+    fun ring(ctx: Context, kind: RingKind, message: String, level: Int = 1) {
+        val intent = Intent(ctx, AlarmSoundService::class.java)
+            .putExtra(AlarmSoundService.EXTRA_KIND, kind.name)
+            .putExtra(AlarmSoundService.EXTRA_MESSAGE, message)
+            .putExtra(AlarmSoundService.EXTRA_LEVEL, level)
+        val started = runCatching { ContextCompat.startForegroundService(ctx, intent) }
+        if (started.isFailure) {
+            // 常駐処理を始められないとき（裏からの起動制限など）は、その場で鳴らす
+            TripLog.add(ctx, TripLog.Category.SYSTEM, "鳴動用の常駐処理を開始できず、直接鳴らした：${started.exceptionOrNull()?.javaClass?.simpleName}")
+            runCatching { ctx.getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification(ctx, kind, message)) }
+            AlarmPlayer.start(ctx, level)
+        }
     }
 
     fun stop(ctx: Context) {
+        ctx.stopService(Intent(ctx, AlarmSoundService::class.java))
+        AlarmPlayer.stop(ctx)
         ctx.getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
     }
 }
