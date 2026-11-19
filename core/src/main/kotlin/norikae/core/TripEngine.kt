@@ -95,6 +95,8 @@ sealed interface TripEvent {
     data class UserTransferring(override val at: ServiceTime) : TripEvent
     /** ユーザーが「降りた」「終了」を押した */
     data class UserFinished(override val at: ServiceTime) : TripEvent
+    /** 乗り過ごした先（三宮・梅田など遠く）で降りて戻る。戻りは「どこからでもモード」（位置）で起こす */
+    data class UserReturning(override val at: ServiceTime) : TripEvent
     /** どこからでもモード：乗り換える駅を選んだ（谷上＝三宮で地下鉄に乗り換え、新開地＝新開地で乗り換え、null＝近づいた方） */
     data class UserChoseVia(val via: StationId?, override val at: ServiceTime) : TripEvent
 }
@@ -117,6 +119,11 @@ sealed interface TripAction {
     data class Notify(val message: String) : TripAction
     /** 乗車終了。すべてのアラームと位置取得を止める */
     data object End : TripAction
+    /**
+     * 乗り過ごした先で降りて戻るとき：時刻表の乗車を終え、「どこからでもモード」（位置で 三宮/新開地 → 北鈴蘭台 を起こす）に引き継ぐ。
+     * [via] は乗り換える駅の指定（TANIGAMI＝三宮で地下鉄、SHINKAICHI、null＝近づいた方）。[message] は案内
+     */
+    data class HandoverToFree(val via: StationId?, val message: String) : TripAction
 }
 
 data class Transition(val state: TripState, val actions: List<TripAction>)
@@ -157,6 +164,21 @@ class TripEngine(
         const val YAMANOMACHI_RADIUS_M = 300.0
         /** 乗り過ごして山の街で降り、反対ホームに移るまでの余裕 */
         const val RETURN_MARGIN_MIN = 5
+        /**
+         * 新開地を乗り過ごして降りた場所が新開地からこれより遠い（三宮 3.1km・梅田など）→ 戻りは時刻ではなく位置で起こす（どこからでもモードに引き継ぐ）。
+         * 近い（高速神戸 0.6km・大開 0.9km・元町 2.2km は境目）なら、すぐ戻れるので時刻表のまま
+         */
+        const val HANDOVER_M = 2000.0
+        /** 乗り過ごし警報がこの回数以上（約この分数）鳴ってから降りたら、位置が分からなくても遠くまで行ったとみなして引き継ぐ */
+        const val HANDOVER_RINGS = 8
+        /** 戻りの見込みに使う速さ（m/分）と乗り換えの余裕（分） */
+        const val RETURN_SPEED_M_PER_MIN = 600.0
+        const val RETURN_WAIT_MIN = 6
+        // 平日の終電（Yahoo!路線情報 2026-11-19 確認）。神鉄の終電に乗れないときの代わりの帰り道
+        /** 三宮（神戸市営）→ 谷上 の終電 00:05発（谷上 00:15着） */
+        const val SUBWAY_LAST_SANNOMIYA_DEP = 24 * 60 + 5
+        /** 谷上 → 北鈴蘭台 の終電 00:19発（北鈴蘭台 00:27着） */
+        const val SHINTETSU_LAST_TANIGAMI_DEP = 24 * 60 + 19
     }
 
     /** 乗車開始 */
@@ -243,6 +265,8 @@ class TripEngine(
             is TripEvent.AlarmFired -> onAlarm(state, event)
             is TripEvent.UserFinished -> done(state, "終了しました")
             is TripEvent.UserTransferring -> toTransferring(state, "乗り換え中にしました")
+            is TripEvent.UserReturning ->
+                if (state.phase == Phase.OVERSHOT_SHINKAICHI) handoverToFree(state, event.at) else Transition(state, emptyList())
             is TripEvent.UserAwake -> Transition(state, emptyList())
             is TripEvent.UserChoseVia -> Transition(state, emptyList())
         }
@@ -277,7 +301,10 @@ class TripEngine(
             }
 
             Phase.OVERSHOT_SHINKAICHI -> {
-                // 乗り過ごした先で降りた。戻ってくる前提で、乗れそうな電車で北鈴蘭台アラームを仮に入れ直す
+                // 遠く（三宮・梅田など）まで行ってから降りた → 戻りは時刻では分からないので、位置で起こすモードに引き継ぐ
+                val far = farFromShinkaichi(state, t)
+                if (far == true || (far == null && state.shinkaichiRings >= HANDOVER_RINGS)) return handoverToFree(state, t)
+                // 近くで降りた。戻ってくる前提で、乗れそうな電車で北鈴蘭台アラームを仮に入れ直す
                 val fallback = planner.connectOrTaxi(t + 10)
                 val actions = mutableListOf<TripAction>(
                     TripAction.StopRinging,
@@ -568,6 +595,51 @@ class TripEngine(
             actions += TripAction.Schedule(listOf(PlannedAlarm(AlarmKind.KITA_CHECK, t + 1, "")))
         }
         return Transition(state.copy(phase = Phase.OVERSHOT_KITA, kitaRings = rings), actions)
+    }
+
+    /**
+     * 乗り過ごした先で降りて戻る：時刻表の乗車を終え、どこからでもモードに引き継ぐ。
+     * 戻って新開地から神鉄に乗れるならおまかせ（三宮・新開地の近づいた方）、神鉄の終電が過ぎていて地下鉄に間に合うなら三宮経由。
+     */
+    /**
+     * 最後に分かった位置が新開地から遠いか（三宮・梅田など）。位置が古いときは、その間に戻れた分（1分600m）を差し引いて判定する。
+     * 20分以上古い、または位置が無いときは null（分からない）
+     */
+    private fun farFromShinkaichi(state: TripState, t: ServiceTime): Boolean? {
+        val d = lastKnownDistance(state, t, StationId.SHINKAICHI) ?: return null
+        return d > HANDOVER_M
+    }
+
+    /** 最後に分かった位置から駅 [id] までの距離（m）。古い位置は、その間に近づけた分を差し引く。20分以上古ければ null */
+    private fun lastKnownDistance(state: TripState, t: ServiceTime, id: StationId): Double? {
+        val last = state.lastLocation ?: return null
+        val at = state.lastLocAt ?: return null
+        val stale = (t.minutes - at).coerceAtLeast(0)
+        if (stale > 20) return null
+        val d = stations[id]?.distanceTo(last) ?: return null
+        // 3分以内なら今の位置とみなす。それより古い分だけ近づけた距離を差し引く
+        return (d - (stale - LOCATION_FRESH_MIN).coerceAtLeast(0) * RETURN_SPEED_M_PER_MIN).coerceAtLeast(0.0)
+    }
+
+    private fun handoverToFree(state: TripState, t: ServiceTime): Transition {
+        val toShinkaichiMin = lastKnownDistance(state, t, StationId.SHINKAICHI)?.let { (it / RETURN_SPEED_M_PER_MIN).toInt() } ?: 20
+        val toSannomiyaMin = lastKnownDistance(state, t, StationId.SANNOMIYA)?.let { (it / RETURN_SPEED_M_PER_MIN).toInt() } ?: 15
+        val shintetsu = planner.connectOrTaxi(t + toShinkaichiMin + RETURN_WAIT_MIN)
+        val subwayOk = t.minutes + toSannomiyaMin + RETURN_WAIT_MIN <= SUBWAY_LAST_SANNOMIYA_DEP
+        val (via, message) = when {
+            shintetsu != null && !shintetsu.endsAtSuzurandai ->
+                null to "反対方向の電車で戻ってください。三宮か新開地に近づいたら位置で起こします。新開地 ${shintetsu.dep} ${shintetsu.dest}行きに乗れる見込みです"
+            shintetsu != null ->
+                null to "反対方向の電車で戻ってください。三宮か新開地に近づいたら位置で起こします。神鉄は新開地 ${shintetsu.dep} 鈴蘭台行き（終電）に乗り、鈴蘭台からタクシーです"
+            subwayOk ->
+                StationId.TANIGAMI to "新開地からの神鉄の終電は過ぎました。三宮で降りて地下鉄 谷上行き（終電 0:05）→ 谷上から神鉄（終電 0:19）で北鈴蘭台へ。三宮に近づいたら位置で起こします"
+            else ->
+                null to "電車の終電は過ぎています。三宮か新開地に近づいたら起こします。タクシーを検討してください"
+        }
+        return Transition(
+            state.copy(phase = Phase.DONE),
+            listOf(TripAction.StopRinging, TripAction.HandoverToFree(via, message), TripAction.End),
+        )
     }
 
     private fun returnGuidance(state: TripState, t: ServiceTime): String {

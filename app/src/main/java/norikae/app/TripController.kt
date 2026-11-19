@@ -104,6 +104,7 @@ object TripController {
             is TripEvent.AlarmFired -> TripLog.add(ctx, TripLog.Category.ALARM, "${alarmLabel(event.kind)}の時刻（${event.at}）：${Notifier.phaseLabel(state)}")
             is TripEvent.UserFinished -> TripLog.add(ctx, TripLog.Category.USER, "「降りた／終了」を押した")
             is TripEvent.UserTransferring -> TripLog.add(ctx, TripLog.Category.USER, "「新開地で乗り換え中」を押した")
+            is TripEvent.UserReturning -> TripLog.add(ctx, TripLog.Category.USER, "「乗り過ごした先で降りた（戻る）」を押した")
             is TripEvent.UserAwake -> Unit // 押した画面・通知の側で記録済み
             is TripEvent.UserChoseVia -> Unit
             is TripEvent.LocationChanged -> {
@@ -196,6 +197,7 @@ object TripController {
     private fun apply(ctx: Context, transition: Transition, before: TripState?) {
         val state: TripState = transition.state
         val ended = transition.actions.any { it is TripAction.End }
+        val handover = transition.actions.filterIsInstance<TripAction.HandoverToFree>().firstOrNull()
         if (before != null && before.phase != state.phase) {
             TripLog.add(ctx, TripLog.Category.STATE, "${Notifier.phaseLabel(before)} → ${Notifier.phaseLabel(state)}")
         }
@@ -210,6 +212,7 @@ object TripController {
                     "${ringLabel(action.kind)}（${when { action.level >= 2 -> "サイレン・音量最大"; action.level >= 1 -> "アラーム音・音量最大"; else -> "振動だけ" }}）：${action.message}",
                 )
                 is TripAction.Notify -> TripLog.add(ctx, TripLog.Category.NOTICE, action.message)
+                is TripAction.HandoverToFree -> TripLog.add(ctx, TripLog.Category.STATE, "乗り過ごした先で降りたので、戻りは「どこからでもモード」（位置）で起こす")
                 TripAction.End -> TripLog.add(ctx, TripLog.Category.STATE, "乗車終了")
                 else -> Unit
             }
@@ -225,9 +228,15 @@ object TripController {
                 is TripAction.Notify -> Notifier.info(ctx, action.message)
                 TripAction.End -> {
                     AlarmKind.entries.forEach { AlarmScheduler.cancel(ctx, it) }
-                    TripService.stop(ctx)
+                    // 引き継ぐときは位置の取得を止めない（どこからでもモードがそのまま使う）
+                    if (handover == null) TripService.stop(ctx)
                 }
+                is TripAction.HandoverToFree -> Unit // 下で開始する（End の後）
             }
+        }
+        if (handover != null) {
+            FreeController.start(ctx, handover.via, how = "乗り過ごしからの戻り", startService = false, intro = handover.message)
+            return
         }
         Notifier.updateOngoing(ctx, if (ended) null else state)
     }

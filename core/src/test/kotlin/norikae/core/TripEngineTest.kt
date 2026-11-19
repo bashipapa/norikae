@@ -66,14 +66,19 @@ class TripEngineTest {
         assertEquals(Phase.OVERSHOT_SHINKAICHI, tr.state.phase)
         assertTrue(tr.actions.any { it is TripAction.Ring && it.kind == RingKind.OVERSHOT_SHINKAICHI })
         assertTrue(tr.actions.any { it is TripAction.Schedule }, "1分後にもう一度確認する")
-        // 5回鳴らしたら止める
         s = tr.state
         repeat(10) { i -> s = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.SHINKAICHI_CHECK, t("22:23") + i)).state }
         // 上限なし：乗っている限り鳴らし続ける（1回目＋10回）
         assertEquals(11, s.shinkaichiRings)
         val more = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.SHINKAICHI_CHECK, t("22:34")))
         assertTrue(more.actions.any { it is TripAction.Ring } && more.actions.any { it is TripAction.Schedule })
-        // 乗り過ごした先で降りたら、戻ってくる前提で北鈴蘭台アラームを入れ直す
+        // 位置が分からないまま11回（約11分）鳴ってから降りた → 遠くまで行ったとみなし、戻りは位置で起こすモードに引き継ぐ
+        val far = engine.reduce(s, TripEvent.MotionChanged(Motion.WALKING, t("22:34")))
+        assertEquals(Phase.DONE, far.state.phase)
+        assertTrue(far.actions.any { it is TripAction.HandoverToFree })
+        // 数回（近く）で降りたら、戻ってくる前提で北鈴蘭台アラームを入れ直す
+        s = tr.state
+        repeat(5) { i -> s = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.SHINKAICHI_CHECK, t("22:23") + i)).state }
         tr = engine.reduce(s, TripEvent.MotionChanged(Motion.WALKING, t("22:30")))
         assertEquals(Phase.TRANSFERRING, tr.state.phase)
         val kitaAlarms = tr.actions.filterIsInstance<TripAction.Schedule>().single().alarms
@@ -335,8 +340,8 @@ class KeepRingingWhileOnTrainTest {
     @Test
     fun stopsWhenStayingAtOneStationForFiveMinutes() {
         var s = overshot()
-        // 次の駅のホームで止まって待っている（歩行は検知されない）
-        val platform = moving(2)
+        // 次の駅（新開地から約1.5km）のホームで止まって待っている（歩行は検知されない）
+        val platform = moving(0)
         s = engine.reduce(s, TripEvent.MotionChanged(Motion.STILL, t("17:45"))).state
         var last: Transition? = null
         for (i in 0..5) {
@@ -346,6 +351,21 @@ class KeepRingingWhileOnTrainTest {
         // 17:45 から5分 → 降りたとみなして警報を止め、新開地に戻る案内
         assertEquals(Phase.TRANSFERRING, s.phase)
         assertTrue(TripAction.StopRinging in last!!.actions)
+    }
+
+    @Test
+    fun stayingFarAwayHandsOverToFreeMode() {
+        var s = overshot()
+        // 三宮あたり（新開地から約3.5km）で止まって5分 → 戻りは位置で起こすモードに引き継ぐ
+        val platform = moving(2)
+        s = engine.reduce(s, TripEvent.MotionChanged(Motion.STILL, t("17:45"))).state
+        var last: Transition? = null
+        for (i in 0..5) {
+            last = engine.reduce(s, TripEvent.LocationChanged(platform, t("17:45") + i))
+            s = last.state
+        }
+        assertEquals(Phase.DONE, s.phase)
+        assertTrue(last!!.actions.any { it is TripAction.HandoverToFree })
     }
 
     @Test
@@ -508,5 +528,92 @@ class WakeEscalationTest {
         val pre = engine.reduce(s, TripEvent.AlarmFired(AlarmKind.KITA_PRE, t("23:10")))
         val rep = engine.reduce(pre.state, TripEvent.AlarmFired(AlarmKind.WAKE_REPEAT_KITA, t("23:11")))
         assertTrue(rep.actions.any { it is TripAction.Ring }, "北鈴蘭台の前はまた起こし直す")
+    }
+}
+
+
+/**
+ * 2026-11-13 のログの再現：山陽明石 22:31 直通特急（梅田行き）で新開地を乗り過ごし、梅田まで行ってしまった。
+ * 戻りの電車で三宮に近づいても起こせなかった（アプリは「神戸電鉄に乗車中」と思い込み、鈴蘭台のアラームを鳴らした）。
+ * 対策：遠くで降りたら、戻りは「どこからでもモード」（位置で三宮・新開地を起こす）に引き継ぐ。
+ */
+class OvershootHandoverTest {
+    private val tt = loadRealTimetable()
+    private val stations = StationLocations(tt.stations)
+    private val engine = TripEngine(RoutePlanner(tt), stations)
+
+    private val nearKosokuKobe = LatLon(34.68204, 135.17767) // 22:57:54 高速神戸まで約318m
+    private val sannomiya = LatLon(34.69394, 135.19611)     // 23:02:03 三宮
+    private val umeda = LatLon(34.70185, 135.49824)         // 23:35:51 阪神大阪梅田
+
+    /** 山陽明石 22:31発 直通特急 → 新開地 22:54着 → 22:57 三田行き → 北鈴蘭台 23:15着 */
+    private fun started(): TripState {
+        val sanyo = tt.sanyoAkashi.first { it.dep == t("22:31") }
+        val train = tt.shintetsu.first { it.dep == t("22:57") }
+        return engine.start(Route(sanyo, sanyo.shinkaichiArr, false, train, train.finalArr!!, Origin.AKASHI), "2026-11-13").state
+    }
+
+    private fun overshot(): TripState {
+        var s = started()
+        s = engine.reduce(s, TripEvent.LocationChanged(LatLon(34.67137, 135.16188), t("22:55"))).state
+        val tr = engine.reduce(s, TripEvent.LocationChanged(nearKosokuKobe, t("22:57")))
+        assertEquals(Phase.OVERSHOT_SHINKAICHI, tr.state.phase)
+        return tr.state
+    }
+
+    @Test
+    fun gotOffAtUmedaHandsOverToFreeMode() {
+        var s = overshot()
+        // 23:35 梅田で停車、23:44 歩行
+        s = engine.reduce(s, TripEvent.LocationChanged(umeda, t("23:35"))).state
+        s = engine.reduce(s, TripEvent.UserAwake(t("23:36"))).state
+        val tr = engine.reduce(s, TripEvent.MotionChanged(Motion.WALKING, t("23:44")))
+        assertEquals(Phase.DONE, tr.state.phase)
+        val handover = tr.actions.filterIsInstance<TripAction.HandoverToFree>().single()
+        assertTrue(TripAction.End in tr.actions)
+        // 梅田から戻ると神鉄も地下鉄も終電後 → 近づいた方で起こし、タクシーを案内
+        assertEquals(null, handover.via)
+        assertTrue("終電は過ぎて" in handover.message, handover.message)
+        // 神鉄に乗っていると思い込んだ鈴蘭台アラームは入れない
+        assertTrue(tr.actions.none { it is TripAction.Schedule })
+    }
+
+    @Test
+    fun gotOffAtSannomiyaEarlyKeepsShintetsuPlan() {
+        var s = overshot()
+        s = engine.reduce(s, TripEvent.LocationChanged(sannomiya, t("23:02"))).state
+        val tr = engine.reduce(s, TripEvent.MotionChanged(Motion.WALKING, t("23:03")))
+        val handover = tr.actions.filterIsInstance<TripAction.HandoverToFree>().single()
+        // 三宮（新開地まで3.1km）→ 戻って新開地 23:17 三田行きに乗れる見込み
+        assertEquals(null, handover.via)
+        assertTrue("23:17" in handover.message, handover.message)
+    }
+
+    @Test
+    fun gotOffAtSannomiyaLateSuggestsSubwayViaTanigami() {
+        var s = overshot()
+        s = engine.reduce(s, TripEvent.LocationChanged(sannomiya, t("23:55"))).state
+        val tr = engine.reduce(s, TripEvent.MotionChanged(Motion.WALKING, t("23:56")))
+        val handover = tr.actions.filterIsInstance<TripAction.HandoverToFree>().single()
+        // 神鉄の終電（新開地 24:03 鈴蘭台行き）には戻れない → 地下鉄で谷上へ（終電 0:05）
+        assertEquals(StationId.TANIGAMI, handover.via)
+        assertTrue("0:05" in handover.message, handover.message)
+    }
+
+    @Test
+    fun gotOffNearbyStaysOnTimetable() {
+        val s = overshot()
+        // 高速神戸（新開地まで約560m）で降りた → すぐ戻れるので今までどおり
+        val tr = engine.reduce(s, TripEvent.MotionChanged(Motion.WALKING, t("22:58")))
+        assertEquals(Phase.TRANSFERRING, tr.state.phase)
+        assertTrue(tr.actions.none { it is TripAction.HandoverToFree })
+    }
+
+    @Test
+    fun returningButtonHandsOver() {
+        val s = overshot()
+        val tr = engine.reduce(s, TripEvent.UserReturning(t("23:40")))
+        assertEquals(Phase.DONE, tr.state.phase)
+        assertTrue(tr.actions.any { it is TripAction.HandoverToFree })
     }
 }

@@ -24,8 +24,12 @@ object FreeController {
 
     fun isActive(ctx: Context): Boolean = Store.freeTrip(ctx) != null
 
+    /**
+     * 開始。[how] はログ用。[startService] が false のときは位置の取得を始めない（時刻表の乗車から引き継ぐときは、もう動いている）。
+     * [intro] があれば開始の案内として通知する
+     */
     @Synchronized
-    fun start(ctx: Context, via: StationId?) {
+    fun start(ctx: Context, via: StationId?, how: String = "画面から", startService: Boolean = true, intro: String? = null) {
         if (TripController.isActive(ctx)) {
             TripLog.add(ctx, TripLog.Category.START, "時刻表の乗車を終了してから、どこからでもモードを開始")
             TripController.end(ctx)
@@ -33,9 +37,10 @@ object FreeController {
         if (isActive(ctx)) end(ctx)
         val (date, time) = TripController.now()
         val e = engine(ctx)
-        TripLog.add(ctx, TripLog.Category.START, "どこからでもモードを開始：${e.viaLabel(via)}")
-        apply(ctx, e.start(date.toString(), time, via), before = null)
-        TripService.start(ctx, fromForeground = true)
+        TripLog.add(ctx, TripLog.Category.START, "どこからでもモードを開始（$how）：${e.viaLabel(via)}")
+        val tr = e.start(date.toString(), time, via)
+        apply(ctx, if (intro == null) tr else FreeTransition(tr.state, listOf(TripAction.Notify(intro))), before = null)
+        if (startService) TripService.start(ctx, fromForeground = true)
     }
 
     @Synchronized

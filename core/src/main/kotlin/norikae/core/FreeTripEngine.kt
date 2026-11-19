@@ -201,6 +201,7 @@ class FreeTripEngine(
             is TripEvent.UserFinished -> done(state, "終了しました")
             is TripEvent.UserChoseVia -> chooseVia(state, event.via, t)
             is TripEvent.UserTransferring -> userGotOff(state, t)
+            is TripEvent.UserReturning -> FreeTransition(state, emptyList())
             is TripEvent.MotionChanged -> onMotion(state, event.motion, t)
             is TripEvent.LocationChanged -> evaluate(withLocation(state, event), t, newFix = true)
             is TripEvent.AlarmFired ->

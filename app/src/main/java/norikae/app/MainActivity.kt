@@ -243,6 +243,11 @@ class MainActivity : ComponentActivity() {
                                     TripController.handle(ctx, TripEvent.UserTransferring(TripController.now().second)); refresh()
                                 }) { Text("新開地で乗り換え中") }
                             }
+                            if (trip.phase == Phase.OVERSHOT_SHINKAICHI) {
+                                OutlinedButton(onClick = {
+                                    TripController.handle(ctx, TripEvent.UserReturning(TripController.now().second)); refresh()
+                                }) { Text("乗り過ごした先で降りた（戻りは位置で起こす）") }
+                            }
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 if (trip.phase != Phase.PLANNED) {
                                     Button(onClick = {

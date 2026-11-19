@@ -105,6 +105,16 @@ class RingingActivity : ComponentActivity() {
                                 },
                                 modifier = Modifier.fillMaxWidth().height(64.dp),
                             ) { Text("新開地で乗り換え中（乗り過ごしていない）", fontSize = 18.sp) }
+                            // 三宮・梅田など遠くまで行って降りた：戻りは位置で起こす（どこからでもモードに引き継ぐ）
+                            OutlinedButton(
+                                onClick = {
+                                    val (_, time) = TripController.now()
+                                    TripController.handle(this@RingingActivity, TripEvent.UserReturning(time))
+                                    Ringer.stop(this@RingingActivity)
+                                    finish()
+                                },
+                                modifier = Modifier.fillMaxWidth().height(64.dp),
+                            ) { Text("乗り過ごした先で降りた（戻りは位置で起こす）", fontSize = 18.sp) }
                         }
                         // 出発前のお知らせ（予定）のときは出さない（押すと予定ごと終わってしまうため）
                         if (Store.trip(this@RingingActivity)?.phase != Phase.PLANNED) {
