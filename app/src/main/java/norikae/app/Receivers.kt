@@ -26,6 +26,7 @@ class AlarmReceiver : BroadcastReceiver() {
             ACTION_STOP_RINGING -> {
                 TripLog.add(context, TripLog.Category.USER, "通知の「止める」を押した")
                 TripController.handle(context, TripEvent.UserAwake(TripController.now().second))
+                FreeController.handle(context, TripEvent.UserAwake(TripController.now().second))
                 Ringer.stop(context)
                 return
             }
@@ -37,6 +38,10 @@ class AlarmReceiver : BroadcastReceiver() {
         }
         val kind = intent.getStringExtra(AlarmScheduler.EXTRA_KIND)?.let { AlarmKind.valueOf(it) } ?: return
         val (_, time) = TripController.now()
+        if (kind == AlarmKind.FREE_TICK) {
+            FreeController.handle(context, TripEvent.AlarmFired(kind, time))
+            return
+        }
         TripController.handle(context, TripEvent.AlarmFired(kind, time))
         // 出発15分前から位置の取得を始める（「常に許可」が無ければ、アプリを開いたときに始まる）
         if (kind == AlarmKind.DEPART_REMINDER && TripController.isActive(context)) {
@@ -85,5 +90,6 @@ class BootReceiver : BroadcastReceiver() {
         TripLog.add(context, TripLog.Category.SYSTEM, if (intent.action == Intent.ACTION_BOOT_COMPLETED) "スマホを再起動した" else "アプリを更新した")
         Sensing.registerAll(context)
         TripController.restore(context)
+        FreeController.restore(context)
     }
 }

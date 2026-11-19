@@ -32,6 +32,8 @@ enum class RingKind {
     OVERSHOT_KITA,
     /** 粟生線・鈴蘭台止まりなど、北鈴蘭台に行かない電車に乗っている */
     WRONG_LINE,
+    /** どこからでもモード：終点の谷上で降りず、三宮方面に折り返している */
+    OVERSHOT_TANIGAMI,
 }
 
 /** 乗車中の状態。アプリのプロセスが落ちても戻せるよう JSON で保存できる形にしている */
@@ -89,6 +91,8 @@ sealed interface TripEvent {
     data class UserTransferring(override val at: ServiceTime) : TripEvent
     /** ユーザーが「降りた」「終了」を押した */
     data class UserFinished(override val at: ServiceTime) : TripEvent
+    /** どこからでもモード：乗り換える駅を選んだ（谷上＝三宮で地下鉄に乗り換え、新開地＝新開地で乗り換え、null＝近づいた方） */
+    data class UserChoseVia(val via: StationId?, override val at: ServiceTime) : TripEvent
 }
 
 sealed interface TripAction {
@@ -236,6 +240,7 @@ class TripEngine(
             is TripEvent.UserFinished -> done(state, "終了しました")
             is TripEvent.UserTransferring -> toTransferring(state, "乗り換え中にしました")
             is TripEvent.UserAwake -> Transition(state, emptyList())
+            is TripEvent.UserChoseVia -> Transition(state, emptyList())
         }
     }
 
@@ -400,6 +405,7 @@ class TripEngine(
         AlarmKind.DEPART_REMINDER -> Transition(state, emptyList()) // 出発後に届いたものは無視
         AlarmKind.SHINKAICHI_CHECK -> checkShinkaichi(state, e.at)
         AlarmKind.KITA_CHECK -> checkKita(state, e.at)
+        AlarmKind.FREE_TICK -> Transition(state, emptyList()) // どこからでもモード用
     }
 
     /** 出発の15分前のお知らせ（帰る段取り） */

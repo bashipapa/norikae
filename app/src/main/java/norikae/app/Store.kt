@@ -1,6 +1,7 @@
 package norikae.app
 
 import android.content.Context
+import norikae.core.FreeState
 import norikae.core.LatLon
 import norikae.core.Origin
 import norikae.core.ServiceTime
@@ -15,6 +16,7 @@ import java.time.LocalDate
 object Store {
     private const val PREFS = "norikae"
     private const val KEY_TRIP = "trip_state"
+    private const val KEY_FREE_TRIP = "free_trip_state"
     private const val KEY_RUN_MINUTES = "sanyo_run_minutes"
     private const val KEY_DAY_OFF = "day_off"
     private const val KEY_LEFT_ORIGIN = "left_origin_at"
@@ -33,6 +35,17 @@ object Store {
     fun saveTrip(ctx: Context, state: TripState?) {
         prefs(ctx).edit().apply {
             if (state == null) remove(KEY_TRIP) else putString(KEY_TRIP, state.toJson())
+        }.apply()
+    }
+
+    // ---- どこからでもモードの状態 ----
+
+    fun freeTrip(ctx: Context): FreeState? =
+        prefs(ctx).getString(KEY_FREE_TRIP, null)?.let { runCatching { FreeState.fromJson(it) }.getOrNull() }
+
+    fun saveFreeTrip(ctx: Context, state: FreeState?) {
+        prefs(ctx).edit().apply {
+            if (state == null) remove(KEY_FREE_TRIP) else putString(KEY_FREE_TRIP, state.toJson())
         }.apply()
     }
 

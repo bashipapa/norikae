@@ -18,7 +18,9 @@ enum class AlarmKind {
     /** 新開地の予告のあと「起きた」が押されるまで、1分おきに起こし直す */
     WAKE_REPEAT_SHINKAICHI,
     /** 北鈴蘭台の予告のあと「起きた」が押されるまで、1分おきに起こし直す */
-    WAKE_REPEAT_KITA;
+    WAKE_REPEAT_KITA,
+    /** どこからでもモード：1分後に見直す（起こし直し・乗り過ごし警報の繰り返し・位置が取れないときの時刻での起こし） */
+    FREE_TICK;
 
     val isCheck: Boolean get() = this == SHINKAICHI_CHECK || this == KITA_CHECK
     val isShinkaichi: Boolean get() = this == SHINKAICHI_PRE || this == SHINKAICHI_MAIN || this == SHINKAICHI_CHECK

@@ -23,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import norikae.core.Phase
+import norikae.core.StationId
 import norikae.core.TripEvent
 
 /** ロック画面の上に出る、アラーム鳴動中の画面 */
@@ -39,7 +40,7 @@ class RingingActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         read(intent)
         // 乗車中・出発前のお知らせのときは、位置の取得を確実に始める（画面が出ている今なら「使用中のみ許可」でも始められる）
-        if (TripController.isActive(this)) TripService.start(this, fromForeground = true)
+        if (TripController.isActive(this) || FreeController.isActive(this)) TripService.start(this, fromForeground = true)
         setContent {
             MaterialTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.errorContainer) {
@@ -54,11 +55,32 @@ class RingingActivity : ComponentActivity() {
                                 TripLog.add(this@RingingActivity, TripLog.Category.USER, "鳴動画面の「起きた（止める）」を押した")
                                 // 起きたことを記録（予告のあとの起こし直しを止める）
                                 TripController.handle(this@RingingActivity, TripEvent.UserAwake(TripController.now().second))
+                                FreeController.handle(this@RingingActivity, TripEvent.UserAwake(TripController.now().second))
                                 Ringer.stop(this@RingingActivity)
                                 finish()
                             },
                             modifier = Modifier.fillMaxWidth().height(96.dp),
                         ) { Text("起きた（止める）", fontSize = 24.sp) }
+                        // どこからでもモード：三宮に着くまでは、乗り換える駅を選べる
+                        val free = Store.freeTrip(this@RingingActivity)
+                        if (free != null && FreeController.canChooseVia(free)) {
+                            listOf(
+                                StationId.TANIGAMI to "三宮で乗り換え（谷上へ）",
+                                StationId.SHINKAICHI to "このまま新開地へ",
+                            ).forEach { (via, label) ->
+                                OutlinedButton(
+                                    onClick = {
+                                        val time = TripController.now().second
+                                        TripLog.add(this@RingingActivity, TripLog.Category.USER, "鳴動画面の「$label」を押した")
+                                        FreeController.handle(this@RingingActivity, TripEvent.UserAwake(time))
+                                        FreeController.handle(this@RingingActivity, TripEvent.UserChoseVia(via, time))
+                                        Ringer.stop(this@RingingActivity)
+                                        finish()
+                                    },
+                                    modifier = Modifier.fillMaxWidth().height(64.dp),
+                                ) { Text(label, fontSize = 18.sp) }
+                            }
+                        }
                         // 新開地の乗り過ごし判定が誤りのとき（実は新開地で乗り換え中）
                         if (Store.trip(this@RingingActivity)?.phase == Phase.OVERSHOT_SHINKAICHI) {
                             OutlinedButton(
@@ -76,6 +98,7 @@ class RingingActivity : ComponentActivity() {
                                 onClick = {
                                     val (_, time) = TripController.now()
                                     TripController.handle(this@RingingActivity, TripEvent.UserFinished(time))
+                                    FreeController.handle(this@RingingActivity, TripEvent.UserFinished(time))
                                     Ringer.stop(this@RingingActivity)
                                     finish()
                                 },

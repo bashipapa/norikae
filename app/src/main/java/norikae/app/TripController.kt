@@ -46,6 +46,11 @@ object TripController {
         planned: Boolean = false,
     ) {
         val (date, _) = now()
+        // どこからでもモードが動いていれば終わらせる（同時には動かさない）
+        if (FreeController.isActive(ctx)) {
+            TripLog.add(ctx, TripLog.Category.START, "どこからでもモードを終了してから開始")
+            FreeController.end(ctx)
+        }
         // 前の乗車が残っていれば片付ける
         if (isActive(ctx)) {
             TripLog.add(ctx, TripLog.Category.START, "前の乗車が残っていたので終了してから開始")
@@ -100,6 +105,7 @@ object TripController {
             is TripEvent.UserFinished -> TripLog.add(ctx, TripLog.Category.USER, "「降りた／終了」を押した")
             is TripEvent.UserTransferring -> TripLog.add(ctx, TripLog.Category.USER, "「新開地で乗り換え中」を押した")
             is TripEvent.UserAwake -> Unit // 押した画面・通知の側で記録済み
+            is TripEvent.UserChoseVia -> Unit
             is TripEvent.LocationChanged -> {
                 // 位置は20秒ごとに届くので、2分に1回だけ記録する
                 val nowMs = System.currentTimeMillis()
@@ -116,6 +122,7 @@ object TripController {
         AlarmKind.DEPART_REMINDER -> "出発15分前のお知らせ"
         AlarmKind.WAKE_REPEAT_SHINKAICHI -> "新開地の起こし直し"
         AlarmKind.WAKE_REPEAT_KITA -> "北鈴蘭台の起こし直し"
+        AlarmKind.FREE_TICK -> "どこからでもモードの見直し"
         AlarmKind.SHINKAICHI_PRE -> "新開地の予告"
         AlarmKind.SHINKAICHI_MAIN -> "新開地の本アラーム"
         AlarmKind.SHINKAICHI_CHECK -> "新開地で降りたかの確認"
@@ -124,15 +131,16 @@ object TripController {
         AlarmKind.KITA_CHECK -> "北鈴蘭台で降りたかの確認"
     }
 
-    private fun ringLabel(k: norikae.core.RingKind) = when (k) {
+    fun ringLabel(k: norikae.core.RingKind) = when (k) {
         norikae.core.RingKind.WAKE -> "起こす"
         norikae.core.RingKind.DEPART -> "帰る時間"
         norikae.core.RingKind.OVERSHOT_SHINKAICHI -> "新開地の乗り過ごし"
         norikae.core.RingKind.OVERSHOT_KITA -> "北鈴蘭台の乗り過ごし"
         norikae.core.RingKind.WRONG_LINE -> "電車違い"
+        norikae.core.RingKind.OVERSHOT_TANIGAMI -> "谷上の降りそびれ"
     }
 
-    private fun motionLabel(m: Motion) = when (m) {
+    fun motionLabel(m: Motion) = when (m) {
         Motion.IN_VEHICLE -> "乗り物"
         Motion.WALKING -> "歩行"
         Motion.STILL -> "停止"
@@ -141,6 +149,10 @@ object TripController {
     /** 乗り物/歩行の判定が届いた。乗車中なら判定へ、そうでなければ自動開始を検討 */
     fun onMotion(ctx: Context, motion: Motion) {
         val (date, time) = now()
+        if (FreeController.isActive(ctx)) {
+            FreeController.onMotion(ctx, motion)
+            return
+        }
         if (isActive(ctx)) {
             TripLog.add(ctx, TripLog.Category.MOTION, "${motionLabel(motion)}を検知（乗車中）")
             handle(ctx, TripEvent.MotionChanged(motion, time))

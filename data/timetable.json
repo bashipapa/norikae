@@ -25,7 +25,12 @@
     "KITA_SUZURANDAI": {"name": "北鈴蘭台", "lat": 34.738993, "lon": 135.151746},
     "YAMANOMACHI": {"name": "山の街", "lat": 34.746159, "lon": 135.153052},
     "SUZURANDAI_NISHIGUCHI": {"name": "鈴蘭台西口", "lat": 34.726521, "lon": 135.14072},
-    "AKASHI": {"name": "山陽明石", "lat": 34.648917, "lon": 134.992956}
+    "AKASHI": {"name": "山陽明石", "lat": 34.648917, "lon": 134.992956},
+    "SANNOMIYA": {"name": "三宮", "lat": 34.6937, "lon": 135.1937},
+    "TANIGAMI": {"name": "谷上", "lat": 34.76174, "lon": 135.171327},
+    "SHIN_KOBE": {"name": "新神戸", "lat": 34.705747, "lon": 135.196383},
+    "MINATOGAWA": {"name": "湊川", "lat": 34.679194, "lon": 135.16608},
+    "DAIKAI": {"name": "大開", "lat": 34.671445, "lon": 135.162136}
   },
   "sanyo": {
     "weekday": [

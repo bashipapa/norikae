@@ -256,6 +256,9 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            // どこからでもモード（大阪などから。三宮・新開地で乗り換え）
+            if (trip == null) item { FreeModeCard(refresh) }
+
             // 乗る駅のタブ：荒井（普通）/ 荒井（特急）/ 明石（普通）/ 明石（特急）
             item {
                 ScrollableTabRow(selectedTabIndex = tabIndex, edgePadding = 0.dp) {
@@ -314,6 +317,74 @@ class MainActivity : ComponentActivity() {
 
             item { Spacer(Modifier.padding(bottom = 24.dp)) }
         }
+        }
+    }
+
+    /**
+     * どこからでもモード：時刻表を使わず、位置で 三宮/新開地 → 谷上 → 北鈴蘭台 を起こす。
+     * 動いていないときは開始ボタン、動いているときは今の状態と操作を出す。
+     */
+    @OptIn(ExperimentalLayoutApi::class)
+    @Composable
+    private fun FreeModeCard(refresh: () -> Unit) {
+        val ctx = this
+        val free = Store.freeTrip(ctx)
+        Card(
+            colors = if (free != null) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+            else CardDefaults.cardColors(),
+        ) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (free == null) {
+                    Text("どこからでもモード（大阪などから）", fontWeight = FontWeight.Bold)
+                    Text(
+                        "時刻表を使わず、位置で起こします。三宮・新開地に近づいたら起こし、" +
+                            "その先は 三宮→谷上→北鈴蘭台 / 新開地→北鈴蘭台 で起こします。電車に乗ったら押してください",
+                        fontSize = 13.sp,
+                    )
+                    Text(
+                        "地下やトンネルでは位置が取れず、起こすのが遅れることがあります（三宮→谷上などは乗った時刻から時刻でも起こします）",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { FreeController.start(ctx, StationId.TANIGAMI); toast("三宮経由で開始しました"); refresh() }) {
+                            Text("三宮→谷上 経由")
+                        }
+                        Button(onClick = { FreeController.start(ctx, StationId.SHINKAICHI); toast("新開地経由で開始しました"); refresh() }) {
+                            Text("新開地 経由")
+                        }
+                        OutlinedButton(onClick = { FreeController.start(ctx, null); toast("近づいた方で起こします"); refresh() }) {
+                            Text("おまかせ（近づいた方）")
+                        }
+                    }
+                } else {
+                    Text("どこからでもモード：${FreeController.describe(ctx, free)}", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Text(
+                        when (free.via) {
+                            StationId.TANIGAMI -> "三宮で地下鉄に乗り換え → 谷上 → 北鈴蘭台"
+                            StationId.SHINKAICHI -> "新開地で神戸電鉄に乗り換え → 北鈴蘭台"
+                            else -> "三宮か新開地（近づいた方）→ 北鈴蘭台"
+                        },
+                        fontSize = 13.sp,
+                    )
+                    if (FreeController.canChooseVia(free)) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (free.via != StationId.TANIGAMI) OutlinedButton(onClick = {
+                                FreeController.handle(ctx, TripEvent.UserChoseVia(StationId.TANIGAMI, TripController.now().second)); refresh()
+                            }) { Text("三宮→谷上 経由に変更") }
+                            if (free.via != StationId.SHINKAICHI) OutlinedButton(onClick = {
+                                FreeController.handle(ctx, TripEvent.UserChoseVia(StationId.SHINKAICHI, TripController.now().second)); refresh()
+                            }) { Text("新開地 経由に変更") }
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = {
+                            FreeController.handle(ctx, TripEvent.UserFinished(TripController.now().second)); refresh()
+                        }) { Text("北鈴蘭台で降りた") }
+                        OutlinedButton(onClick = { FreeController.end(ctx); refresh() }) { Text("中止") }
+                    }
+                }
+            }
         }
     }
 

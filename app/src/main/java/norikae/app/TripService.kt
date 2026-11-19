@@ -30,7 +30,9 @@ class TripService : Service() {
         override fun onLocationResult(result: LocationResult) {
             val loc = result.lastLocation ?: return
             val (_, time) = TripController.now()
-            TripController.handle(this@TripService, TripEvent.LocationChanged(LatLon(loc.latitude, loc.longitude), time))
+            val event = TripEvent.LocationChanged(LatLon(loc.latitude, loc.longitude), time)
+            TripController.handle(this@TripService, event)
+            FreeController.handle(this@TripService, event)
         }
     }
 
@@ -42,7 +44,7 @@ class TripService : Service() {
             ServiceCompat.startForeground(
                 this,
                 Notifier.ONGOING_ID,
-                Notifier.ongoing(this, Store.trip(this)),
+                Notifier.ongoingCurrent(this),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION,
             )
         }

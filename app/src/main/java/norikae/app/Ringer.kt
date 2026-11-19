@@ -43,6 +43,7 @@ object Ringer {
         RingKind.OVERSHOT_SHINKAICHI -> "新開地を乗り過ごし！"
         RingKind.OVERSHOT_KITA -> "北鈴蘭台を乗り過ごし！"
         RingKind.WRONG_LINE -> "電車が違うかも！"
+        RingKind.OVERSHOT_TANIGAMI -> "谷上で降りそびれ！"
     }
 
     /** 全画面の鳴動画面を出す通知（音・振動なし） */
@@ -141,6 +142,30 @@ object Notifier {
             .setOngoing(true)
             .setSilent(true)
             .build()
+    }
+
+    /** 乗車中の常駐表示：どこからでもモードならその内容、そうでなければ時刻表の乗車 */
+    fun ongoingCurrent(ctx: Context): Notification {
+        val free = Store.freeTrip(ctx) ?: return ongoing(ctx, Store.trip(ctx))
+        return ongoingFree(ctx, FreeController.describe(ctx, free))
+    }
+
+    fun ongoingFree(ctx: Context, text: String): Notification {
+        ensureChannel(ctx)
+        return NotificationCompat.Builder(ctx, CHANNEL_INFO)
+            .setSmallIcon(R.drawable.ic_stat_norikae)
+            .setContentTitle("どこからでもモード（乗車中）")
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setContentIntent(openApp(ctx))
+            .setOngoing(true)
+            .setSilent(true)
+            .build()
+    }
+
+    fun updateOngoingFree(ctx: Context, text: String?) {
+        val nm = ctx.getSystemService(NotificationManager::class.java)
+        if (text == null) nm.cancel(ONGOING_ID) else runCatching { nm.notify(ONGOING_ID, ongoingFree(ctx, text)) }
     }
 
     fun updateOngoing(ctx: Context, state: TripState?) {
