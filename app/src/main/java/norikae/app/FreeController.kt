@@ -143,6 +143,7 @@ object FreeController {
                     AlarmScheduler.cancel(ctx, AlarmKind.FREE_TICK)
                     if (!TripController.isActive(ctx)) TripService.stop(ctx)
                 }
+                is TripAction.HandoverToFree -> Unit // 時刻表モード側だけが出す
             }
         }
         if (!TripController.isActive(ctx)) Notifier.updateOngoingFree(ctx, if (ended) null else describe(ctx, state))
