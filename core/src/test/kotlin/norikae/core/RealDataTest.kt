@@ -285,3 +285,20 @@ class NoOvershootWarningBefore21Test {
         assertEquals(r.shinkaichiArr!! - 8, pre.at)
     }
 }
+
+
+/** 古いダウンロード時刻表（三宮などの駅が無い）でも、同梱の駅の位置で補える（2026-11-19 に鳴らなかった原因の再発防止） */
+class StationFallbackTest {
+    @Test
+    fun missingStationsAreFilledFromBundled() {
+        val bundled = loadRealTimetable()
+        val oldJson = """{"stations": {"SHINKAICHI": {"lat": 34.676527, "lon": 135.169552}}, "shintetsu": {"weekday": [{"dep": "22:00", "type": "普通", "dest": "三田", "kitaSuzurandai": "22:18"}]}}"""
+        val old = Timetable.parse(oldJson)
+        assertEquals(null, old.stations[StationId.SANNOMIYA])
+        val merged = old.withStationsFrom(bundled)
+        assertEquals(bundled.stations[StationId.SANNOMIYA], merged.stations[StationId.SANNOMIYA])
+        assertEquals(bundled.stations[StationId.TANIGAMI], merged.stations[StationId.TANIGAMI])
+        // 自分の方にある駅はそのまま
+        assertEquals(LatLon(34.676527, 135.169552), merged.stations[StationId.SHINKAICHI])
+    }
+}

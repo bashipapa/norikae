@@ -19,6 +19,7 @@ import java.time.LocalDate
  */
 object FreeController {
     private val settings = AlarmSettings()
+    private val REQUIRED_STATIONS = listOf(StationId.SANNOMIYA, StationId.SHINKAICHI, StationId.TANIGAMI, StationId.KITA_SUZURANDAI)
 
     private fun engine(ctx: Context) = FreeTripEngine(Store.stations(ctx), settings)
 
@@ -38,6 +39,15 @@ object FreeController {
         val (date, time) = TripController.now()
         val e = engine(ctx)
         TripLog.add(ctx, TripLog.Category.START, "どこからでもモードを開始（$how）：${e.viaLabel(via)}")
+        // 判定に要る駅の位置がそろっているか（無ければ鳴らせないので、すぐ知らせる）
+        val stations = Store.stations(ctx)
+        val missing = REQUIRED_STATIONS.filter { stations[it] == null }
+        if (missing.isNotEmpty()) {
+            TripLog.add(ctx, TripLog.Category.SYSTEM, "駅の位置が無い：${missing.joinToString("・") { it.label }}（アプリを入れ直すか、設定の「今すぐ更新」）")
+            Notifier.info(ctx, "駅の位置（${missing.joinToString("・") { it.label }}）が無いため起こせません。設定の時刻表「今すぐ更新」を押すか、アプリを入れ直してください")
+        } else {
+            TripLog.add(ctx, TripLog.Category.SYSTEM, "駅の位置：三宮・新開地・谷上・北鈴蘭台あり")
+        }
         val tr = e.start(date.toString(), time, via)
         apply(ctx, if (intro == null) tr else FreeTransition(tr.state, listOf(TripAction.Notify(intro))), before = null)
         if (startService) TripService.start(ctx, fromForeground = true)
@@ -73,10 +83,11 @@ object FreeController {
                 val nowMs = System.currentTimeMillis()
                 if (nowMs - lastLocationLogAt < 120_000) return
                 lastLocationLogAt = nowMs
-                val target = state.target
-                val where = target?.let { id ->
-                    Store.stations(ctx)[id]?.let { "${id.label}まで約${it.distanceTo(event.location).toInt()}m" }
-                } ?: ""
+                // 向かっている駅までの距離。まだ区間に入っていなければ、三宮・新開地のうち近い方
+                val st = Store.stations(ctx)
+                val id = state.target ?: listOf(StationId.SANNOMIYA, StationId.SHINKAICHI)
+                    .filter { st[it] != null }.minByOrNull { st[it]!!.distanceTo(event.location) }
+                val where = id?.let { i -> st[i]?.let { "${if (state.target == null) "まだ区間外・" else ""}${i.label}まで約${it.distanceTo(event.location).toInt()}m" } } ?: "駅の位置なし"
                 TripLog.add(ctx, TripLog.Category.PLACE, "%.5f, %.5f（%s）".format(event.location.lat, event.location.lon, where))
             }
             else -> Unit

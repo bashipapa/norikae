@@ -154,7 +154,8 @@ object Store {
         val base = cachedTimetable ?: run {
             val bundled = ctx.assets.open("timetable.json").bufferedReader().use { Timetable.parse(it.readText()) }
             val downloaded = runCatching { Timetable.parse(downloadedFile(ctx).readText()) }.getOrNull()
-            if (downloaded != null && (downloaded.retrievedAt ?: "") >= (bundled.retrievedAt ?: "")) downloaded else bundled
+            // ダウンロードした方が新しい（同じ日を含む）ならそれを使うが、駅の位置は同梱分で必ず補う（古いダウンロードに無い駅のため）
+            if (downloaded != null && (downloaded.retrievedAt ?: "") >= (bundled.retrievedAt ?: "")) downloaded.withStationsFrom(bundled) else bundled
         }.also { cachedTimetable = it }
         val runMinutes = sanyoRunMinutes(ctx) ?: return base
         return base.copy(sanyoDefaultRunMinutes = runMinutes)

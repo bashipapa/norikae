@@ -108,6 +108,14 @@ data class Timetable(
         Origin.AKASHI -> sanyoAkashi
     }
 
+    /**
+     * 駅の位置を [other] で補う（この時刻表に無い駅は [other] のものを使う）。
+     * ダウンロードした時刻表が古く、あとから追加した駅（三宮・谷上など）を持っていなくても判定できるようにする。
+     * 2026-11-19 に「どこからでもモード」が鳴らなかった原因：週1回ダウンロードした時刻表に三宮の位置が無く、
+     * 同梱の時刻表より優先されていた
+     */
+    fun withStationsFrom(other: Timetable): Timetable = copy(stations = other.stations + stations)
+
     companion object {
         private val json = Json { ignoreUnknownKeys = true }
 

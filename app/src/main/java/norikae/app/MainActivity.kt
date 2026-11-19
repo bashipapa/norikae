@@ -535,10 +535,15 @@ class MainActivity : ComponentActivity() {
                     },
                     actions = {
                         IconButton(onClick = {
+                            // 本文は新しい方から約300行（送り先で末尾が切れても最新が残る）。全文はファイルで添付
+                            val file = TripLog.shareFile(ctx, days = 7)
+                            val uri = androidx.core.content.FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", file)
                             val send = Intent(Intent.ACTION_SEND)
                                 .setType("text/plain")
                                 .putExtra(Intent.EXTRA_SUBJECT, "おりるよ 乗車ログ")
-                                .putExtra(Intent.EXTRA_TEXT, TripLog.shareText(ctx, days = 7))
+                                .putExtra(Intent.EXTRA_TEXT, TripLog.shareText(ctx, days = 7, maxLines = 300))
+                                .putExtra(Intent.EXTRA_STREAM, uri)
+                                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             startActivity(Intent.createChooser(send, "乗車ログを送る（直近7日）"))
                         }) { Icon(Icons.Filled.Share, contentDescription = "共有") }
                         IconButton(onClick = { confirmClear = true }) { Icon(Icons.Filled.Delete, contentDescription = "消す") }
@@ -555,7 +560,7 @@ class MainActivity : ComponentActivity() {
                 }
                 item {
                     Text(
-                        "新しい順。右上の共有ボタンで直近7日分をテキストで送れます",
+                        "新しい順。右上の共有ボタンで直近7日分を送れます（本文は新しい方から約300行、全文はファイルで添付）",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

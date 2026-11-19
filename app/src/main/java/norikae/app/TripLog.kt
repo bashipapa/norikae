@@ -69,11 +69,20 @@ object TripLog {
         runCatching { file(ctx).delete() }
     }
 
-    /** 共有用のテキスト（[days] 日分、古い順） */
-    fun shareText(ctx: Context, days: Int = 7): String {
+    /** 共有用のテキスト（[days] 日分、古い順）。[maxLines] を超えるときは新しい方を残す（送り先で末尾が切れて最新が消えないように） */
+    fun shareText(ctx: Context, days: Int = 7, maxLines: Int = Int.MAX_VALUE): String {
         val since = LocalDateTime.now().minusDays(days.toLong()).format(TS)
-        return read(ctx).asReversed()
+        val lines = read(ctx).asReversed()
             .filter { it.time >= since }
-            .joinToString("\n") { "${it.time} [${it.category}] ${it.message}" }
+            .map { "${it.time} [${it.category}] ${it.message}" }
+        val kept = lines.takeLast(maxLines)
+        val head = if (kept.size < lines.size) "（${lines.size - kept.size}行省略。全文は添付ファイル）\n" else ""
+        return head + kept.joinToString("\n")
+    }
+
+    /** 共有用のファイル（[days] 日分の全文）。添付して送る */
+    fun shareFile(ctx: Context, days: Int = 7): File {
+        val dir = File(ctx.cacheDir, "share").apply { mkdirs() }
+        return File(dir, "oriruyo-log.txt").apply { writeText(shareText(ctx, days) + "\n") }
     }
 }
