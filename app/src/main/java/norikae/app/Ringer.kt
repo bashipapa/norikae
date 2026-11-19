@@ -120,7 +120,7 @@ object Notifier {
         ensureChannel(ctx)
         val n = NotificationCompat.Builder(ctx, CHANNEL_INFO)
             .setSmallIcon(R.drawable.ic_stat_norikae)
-            .setContentTitle("のりかえアラーム")
+            .setContentTitle("おりるよ")
             .setContentText(message)
             .setStyle(NotificationCompat.BigTextStyle().bigText(message))
             .setContentIntent(openApp(ctx))

@@ -175,7 +175,7 @@ class MainActivity : ComponentActivity() {
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("のりかえアラーム", fontWeight = FontWeight.Bold) },
+                    title = { Text("おりるよ", fontWeight = FontWeight.Bold) },
                     actions = {
                         IconButton(onClick = onOpenSettings) {
                             Icon(Icons.Filled.Settings, contentDescription = "設定")
@@ -532,7 +532,7 @@ class MainActivity : ComponentActivity() {
                         IconButton(onClick = {
                             val send = Intent(Intent.ACTION_SEND)
                                 .setType("text/plain")
-                                .putExtra(Intent.EXTRA_SUBJECT, "のりかえアラーム 乗車ログ")
+                                .putExtra(Intent.EXTRA_SUBJECT, "おりるよ 乗車ログ")
                                 .putExtra(Intent.EXTRA_TEXT, TripLog.shareText(ctx, days = 7))
                             startActivity(Intent.createChooser(send, "乗車ログを送る（直近7日）"))
                         }) { Icon(Icons.Filled.Share, contentDescription = "共有") }
