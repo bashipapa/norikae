@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import norikae.core.FreePhase
 import norikae.core.Phase
 import norikae.core.StationId
 import norikae.core.TripEvent
@@ -61,9 +62,22 @@ class RingingActivity : ComponentActivity() {
                             },
                             modifier = Modifier.fillMaxWidth().height(96.dp),
                         ) { Text("起きた（止める）", fontSize = 24.sp) }
-                        // どこからでもモード：三宮に着くまでは、乗り換える駅を選べる
+                        // どこからでもモード：「○○で降りた」（降りたかの確認アラームを止め、次の区間へ進める）
                         val free = Store.freeTrip(this@RingingActivity)
-                        if (free != null && FreeController.canChooseVia(free)) {
+                        val offLabel = free?.let { FreeController.offButtonLabel(this@RingingActivity, it) }
+                        if (free != null && offLabel != null) {
+                            Button(
+                                onClick = {
+                                    val time = TripController.now().second
+                                    FreeController.handle(this@RingingActivity, TripEvent.UserTransferring(time))
+                                    Ringer.stop(this@RingingActivity)
+                                    finish()
+                                },
+                                modifier = Modifier.fillMaxWidth().height(64.dp),
+                            ) { Text(offLabel, fontSize = 18.sp) }
+                        }
+                        // 三宮に着くまでは、乗り換える駅を選べる
+                        if (free != null && FreeController.canChooseVia(free) && free.phase != FreePhase.AT_SANNOMIYA) {
                             listOf(
                                 StationId.TANIGAMI to "三宮で乗り換え（谷上へ）",
                                 StationId.SHINKAICHI to "このまま新開地へ",

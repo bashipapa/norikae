@@ -44,6 +44,8 @@ object Ringer {
         RingKind.OVERSHOT_KITA -> "北鈴蘭台を乗り過ごし！"
         RingKind.WRONG_LINE -> "電車が違うかも！"
         RingKind.OVERSHOT_TANIGAMI -> "谷上で降りそびれ！"
+        RingKind.OVERSHOT_SANNOMIYA -> "三宮で降りそびれ！"
+        RingKind.CHECK -> "降りましたか？"
     }
 
     /** 全画面の鳴動画面を出す通知（音・振動なし） */

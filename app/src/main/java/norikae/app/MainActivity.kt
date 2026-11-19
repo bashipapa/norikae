@@ -342,7 +342,7 @@ class MainActivity : ComponentActivity() {
                         fontSize = 13.sp,
                     )
                     Text(
-                        "地下やトンネルでは位置が取れず、起こすのが遅れることがあります（三宮→谷上などは乗った時刻から時刻でも起こします）",
+                        "地下やトンネルで位置が取れない間は、最後の位置からの到着見込みの時刻で起こします。着いたはずなのに降りた動きが無ければ、降りたと確認できるまで毎分鳴らします（「○○で降りた」を押すと止まります）",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -377,12 +377,12 @@ class MainActivity : ComponentActivity() {
                             }) { Text("新開地 経由に変更") }
                         }
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FreeController.offButtonLabel(ctx, free)?.let { label ->
                         Button(onClick = {
-                            FreeController.handle(ctx, TripEvent.UserFinished(TripController.now().second)); refresh()
-                        }) { Text("北鈴蘭台で降りた") }
-                        OutlinedButton(onClick = { FreeController.end(ctx); refresh() }) { Text("中止") }
+                            FreeController.handle(ctx, TripEvent.UserTransferring(TripController.now().second)); refresh()
+                        }) { Text(label) }
                     }
+                    OutlinedButton(onClick = { FreeController.end(ctx); refresh() }) { Text("中止") }
                 }
             }
         }

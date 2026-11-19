@@ -61,6 +61,7 @@ object FreeController {
     private fun logEvent(ctx: Context, state: FreeState, event: TripEvent) {
         when (event) {
             is TripEvent.UserFinished -> TripLog.add(ctx, TripLog.Category.USER, "「北鈴蘭台で降りた（終了）」を押した")
+            is TripEvent.UserTransferring -> TripLog.add(ctx, TripLog.Category.USER, "「${engine(ctx).offButtonLabel(state) ?: "降りた"}」を押した")
             is TripEvent.UserChoseVia -> TripLog.add(ctx, TripLog.Category.USER, "乗り換えを選んだ：${engine(ctx).viaLabel(event.via)}")
             is TripEvent.LocationChanged -> {
                 // 位置は20秒ごとに届くので、2分に1回だけ記録する
@@ -84,7 +85,7 @@ object FreeController {
             else -> "三宮・新開地に向かっています"
         }
         FreePhase.TO_SANNOMIYA -> "三宮に近づいています"
-        FreePhase.AT_SANNOMIYA -> "三宮（谷上方面か新開地方面かを判断中）"
+        FreePhase.AT_SANNOMIYA -> if (state.offAtSannomiya) "三宮で降りた（地下鉄に乗るのを待っています）" else "三宮（降りて地下鉄か、そのまま新開地かを判断中）"
         FreePhase.TO_SHINKAICHI -> "新開地に向かっています"
         FreePhase.TO_TANIGAMI -> "谷上に向かっています"
         FreePhase.TO_KITA -> "北鈴蘭台に向かっています"
@@ -99,6 +100,9 @@ object FreeController {
         val dist = d?.let { "（${state.target?.label}まで約" + (if (it >= 1000) "%.1fkm".format(it / 1000) else "${it.toInt()}m") + "）" } ?: ""
         return phaseLabel(state) + dist
     }
+
+    /** 「○○で降りた」ボタンの文言（出さないときは null） */
+    fun offButtonLabel(ctx: Context, state: FreeState): String? = engine(ctx).offButtonLabel(state)
 
     /** 乗り換えの選び直しができる段階か（三宮に着くまで） */
     fun canChooseVia(state: FreeState) =

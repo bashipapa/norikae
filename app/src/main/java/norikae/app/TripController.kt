@@ -138,6 +138,8 @@ object TripController {
         norikae.core.RingKind.OVERSHOT_KITA -> "北鈴蘭台の乗り過ごし"
         norikae.core.RingKind.WRONG_LINE -> "電車違い"
         norikae.core.RingKind.OVERSHOT_TANIGAMI -> "谷上の降りそびれ"
+        norikae.core.RingKind.OVERSHOT_SANNOMIYA -> "三宮の降りそびれ"
+        norikae.core.RingKind.CHECK -> "降りたかの確認"
     }
 
     fun motionLabel(m: Motion) = when (m) {
